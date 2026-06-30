@@ -2,7 +2,7 @@
 
 # ⚡ Momentum AI
 
-### Build Better Habits. Finish More Tasks. Never Lose Momentum.
+### Stay ahead of deadlines with AI-powered planning and smart productivity coaching.
 
 [![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=white)](https://react.dev/)
 [![Node.js](https://img.shields.io/badge/Node.js-Backend-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -56,13 +56,12 @@ Instead of simply tracking due dates, Momentum AI:
 | 📅 **Smart Daily Planner** | Generates a realistic, achievable daily plan tailored to current workload. |
 | ⚡ **Momentum Builder** | Encourages consistent daily progress through small, achievable wins. |
 | 🔥 **Momentum Score** | A dynamic score that reflects consistency and ongoing productivity. |
-| 📝 **AI Task Breakdown** | Splits complex, overwhelming tasks into clear, actionable sub-tasks. |
-| 🤖 **AI Productivity Assistant** | A conversational AI coach to help plan, clarify, and stay accountable. |
+| 🎯 **Goals & Journeys** | Set long-term goals and track structured journeys toward achieving them. |
+| ⏱️ **Focus Timer** | A dedicated focus session timer to support deep, distraction-free work. |
+| 🤖 **AI Coach** | A conversational AI coach that offers guidance, motivation, and planning support. |
+| 🏆 **Achievement Garden** | A visual, gamified space where completed goals and milestones grow over time. |
 | 📊 **Dashboard** | A visual snapshot of pending work, priorities, and overall progress. |
-| 📆 **Calendar** | A unified view of deadlines, daily plans, and scheduled focus sessions. |
-| 🎯 **Focus Mode** | A distraction-free environment designed for deep, single-task focus. |
-| 📈 **Progress Reports** | Detailed insights into productivity trends and completion rates. |
-| ⚙️ **User Settings** | Personalize planning preferences, notifications, and workflow style. |
+| ⚙️ **Settings** | Personalize planning preferences, notifications, and workflow style. |
 | 🔐 **Secure Login System** | Reliable authentication to keep user data safe and private. |
 
 ---
@@ -185,16 +184,17 @@ DATABASE_URL=
 
 ## 📸 Screenshots
 
+Below are some screenshots showcasing the main features and interface of **Momentum AI**.
+
 | Page | Preview |
 |---|---|
 | 🏠 Landing Page | ![Landing Page](screenshots/landing-page.png) |
 | 🔐 Login Page | ![Login Page](screenshots/login-page.png) |
 | 📊 Dashboard | ![Dashboard](screenshots/dashboard.png) |
-| 📝 My Tasks | ![My Tasks](screenshots/my-tasks.png) |
-| 📆 Calendar | ![Calendar](screenshots/calendar.png) |
-| 🤖 AI Assistant | ![AI Assistant](screenshots/ai-assistant.png) |
-| 🎯 Focus Mode | ![Focus Mode](screenshots/focus-mode.png) |
-| 📈 Reports | ![Reports](screenshots/reports.png) |
+| 🎯 Goals & Journeys | ![Goals & Journeys](screenshots/goals-journeys.png) |
+| ⏱️ Focus Timer | ![Focus Timer](screenshots/focus-timer.png) |
+| 🤖 AI Coach | ![AI Coach](screenshots/ai-coach.png) |
+| 🏆 Achievement Garden | ![Achievement Garden](screenshots/achievement-garden.png) |
 | ⚙️ Settings | ![Settings](screenshots/settings.png) |
 
 ---
