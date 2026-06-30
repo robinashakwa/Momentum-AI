@@ -4,12 +4,7 @@
 
 ### Stay ahead of deadlines with AI-powered planning and smart productivity coaching.
 
-[![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=white)](https://react.dev/)
-[![Node.js](https://img.shields.io/badge/Node.js-Backend-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-[![Gemini](https://img.shields.io/badge/Google%20Gemini-AI-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
-[![Cloud Run](https://img.shields.io/badge/Google%20Cloud%20Run-Deployed-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)](https://cloud.google.com/run)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](#-license)
+**React** · **Node.js** · **SQLite** · **Google Gemini** · **Google Cloud Run** · **MIT License**
 
 🏆 **Built for VIBE2SHIP — India's Biggest Vibe Coding Hackathon**
 *Presented by Coding Ninjas × Google for Developers*
@@ -181,21 +176,6 @@ DATABASE_URL=
 ```
 
 ---
-
-## 📸 Screenshots
-
-Below are some screenshots showcasing the main features and interface of **Momentum AI**.
-
-| Page | Preview |
-|---|---|
-| 🏠 Landing Page | ![Landing Page](screenshots/landing-page.png) |
-| 🔐 Login Page | ![Login Page](screenshots/login-page.png) |
-| 📊 Dashboard | ![Dashboard](screenshots/dashboard.png) |
-| 🎯 Goals & Journeys | ![Goals & Journeys](screenshots/goals-journeys.png) |
-| ⏱️ Focus Timer | ![Focus Timer](screenshots/focus-timer.png) |
-| 🤖 AI Coach | ![AI Coach](screenshots/ai-coach.png) |
-| 🏆 Achievement Garden | ![Achievement Garden](screenshots/achievement-garden.png) |
-| ⚙️ Settings | ![Settings](screenshots/settings.png) |
 
 ---
 
