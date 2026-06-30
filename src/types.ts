@@ -39,6 +39,11 @@ export interface Task {
   dateScheduled: string; // YYYY-MM-DD
   orderIndex: number;
   createdAt: string;
+  description?: string;
+  deadlineTime?: string;
+  estimatedHours?: number;
+  priority?: string;
+  completedAt?: string | null;
 }
 
 export interface MiniTask {

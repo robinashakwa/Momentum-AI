@@ -13,7 +13,8 @@ import {
   createGoal, getGoals, getGoalDetails, updateMiniTaskStatus, updateTaskStatus,
   getNextAction, addFocusSession, getFocusHistory, saveReflection, getReflections,
   addChatMessage, getChatHistory, clearChatHistory, getAchievements, getMomentumStats,
-  getSettings, updateSettings
+  getSettings, updateSettings, getPendingTasks, deleteGoal, updateGoalStatus, deleteTask,
+  addTaskManually
 } from "./src/db.js";
 
 // Load environment variables
@@ -158,107 +159,93 @@ app.get("/api/goals/:id", authenticateToken, (req, res) => {
   res.json({ goal: details });
 });
 
-// Create new goal with AI Goal Breakdown (Feature 1 & Feature 3)
+// Update Goal Status
+app.patch("/api/goals/:id/status", authenticateToken, (req, res) => {
+  const user = (req as any).user;
+  const goalId = parseInt(req.params.id);
+  const { status } = req.body; // 'active', 'completed', 'archived'
+
+  if (!status) {
+    res.status(400).json({ error: "Status is required" });
+    return;
+  }
+
+  updateGoalStatus(goalId, user.id, status);
+  res.json({ success: true });
+});
+
+// Delete Goal
+app.delete("/api/goals/:id", authenticateToken, (req, res) => {
+  const user = (req as any).user;
+  const goalId = parseInt(req.params.id);
+
+  deleteGoal(goalId, user.id);
+  res.json({ success: true });
+});
+
+// Delete Task
+app.delete("/api/tasks/:id", authenticateToken, (req, res) => {
+  const user = (req as any).user;
+  const taskId = parseInt(req.params.id);
+
+  deleteTask(taskId, user.id);
+  res.json({ success: true });
+});
+
+// Create new goal with deadline enforcement
 app.post("/api/goals", authenticateToken, async (req, res) => {
   const user = (req as any).user;
-  const { title, targetDate } = req.body;
+  const { title, targetDate, description, deadlineTime, estimatedHours, priority, milestones: clientMilestones } = req.body;
 
-  if (!title || !targetDate) {
-    res.status(400).json({ error: "Goal title and target date are required" });
+  if (!title || !targetDate || !deadlineTime) {
+    res.status(400).json({ error: "Goal title, deadline date, and deadline time are required." });
     return;
   }
 
   try {
-    // Call Gemini API to automatically break down the goal into Milestones, Tasks, and MiniTasks
-    const prompt = `You are an AI Goal Breakdown assistant. Break down the user's high-level goal: "${title}" which has a target date of "${targetDate}". 
-Generate a comprehensive structured roadmap containing 3 key Milestones.
-For each Milestone, generate 2 realistic Tasks.
-For each Task, generate 3 sequential, tiny, low-friction, concrete "Mini Tasks" that reduce cognitive load and prevent procrastination.
-Your response MUST fit the specified JSON schema exactly. Ensure tasks are simple, encouraging, and highly actionable.`;
-
-    const response = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY,
-          description: "List of milestones",
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              title: {
-                type: Type.STRING,
-                description: "Clean title of the milestone (e.g. 'Build Core Frontend UI')",
-              },
-              tasks: {
-                type: Type.ARRAY,
-                description: "The concrete tasks under this milestone",
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    title: {
-                      type: Type.STRING,
-                      description: "The title of the task (e.g. 'Implement task lists component')",
-                    },
-                    miniTasks: {
-                      type: Type.ARRAY,
-                      description: "2-3 extremely small, bite-sized mini tasks to perform sequentially",
-                      items: {
-                        type: Type.STRING,
-                      },
-                    },
-                  },
-                  required: ["title", "miniTasks"],
-                },
-              },
-            },
-            required: ["title", "tasks"],
-          },
-        },
-      },
-    });
-
-    const breakdownText = response.text || "[]";
-    const milestones = JSON.parse(breakdownText);
-
-    // Write to SQLite Database
-    const goalId = createGoal(user.id, title, targetDate, milestones);
-
+    const goalId = createGoal(
+      user.id, 
+      title, 
+      targetDate, 
+      clientMilestones || [], 
+      description || '', 
+      deadlineTime, 
+      Number(estimatedHours) || 0, 
+      priority || 'medium'
+    );
     res.json({ success: true, goalId });
-  } catch (error: any) {
-    console.error("AI Goal Breakdown Error:", error);
-    // Fallback milestone creation if Gemini fails
-    const fallbackMilestones = [
-      {
-        title: "Initial Launchpad",
-        tasks: [
-          {
-            title: "Plan and map out starting requirements",
-            miniTasks: ["Write down top 3 priorities", "Gather essential tools", "Set aside 20 minutes"],
-          },
-          {
-            title: "Take first simple steps",
-            miniTasks: ["Read introductory material", "Open workspace", "Write first item"],
-          },
-        ],
-      },
-      {
-        title: "Core Execution",
-        tasks: [
-          {
-            title: "Build out the foundational structure",
-            miniTasks: ["Sketch design on paper", "Create basic outline", "Focus for 15 minutes"],
-          },
-        ],
-      },
-    ];
-    try {
-      const goalId = createGoal(user.id, title, targetDate, fallbackMilestones);
-      res.json({ success: true, goalId, note: "Loaded with supportive default plan" });
-    } catch (dbError) {
-      res.status(500).json({ error: "Failed to create goal database entries" });
-    }
+  } catch (dbError) {
+    console.error("Failed to create goal database entries:", dbError);
+    res.status(500).json({ error: "Failed to create goal database entries" });
+  }
+});
+
+// Add Task Manually with deadline enforcement
+app.post("/api/goals/:id/tasks", authenticateToken, (req, res) => {
+  const user = (req as any).user;
+  const goalId = parseInt(req.params.id);
+  const { title, description, deadlineDate, deadlineTime, estimatedHours, priority } = req.body;
+
+  if (!title || !deadlineDate || !deadlineTime) {
+    res.status(400).json({ error: "Task title, deadline date, and deadline time are required." });
+    return;
+  }
+
+  try {
+    const taskId = addTaskManually(
+      user.id, 
+      goalId, 
+      title, 
+      description || '', 
+      deadlineDate, 
+      deadlineTime, 
+      Number(estimatedHours) || 1.0, 
+      priority || 'medium'
+    );
+    res.json({ success: true, taskId });
+  } catch (err) {
+    console.error("Failed to add task manually:", err);
+    res.status(500).json({ error: "Failed to add task manually" });
   }
 });
 
@@ -352,6 +339,12 @@ app.get("/api/focus/history", authenticateToken, (req, res) => {
   res.json({ history });
 });
 
+app.get("/api/focus/tasks", authenticateToken, (req, res) => {
+  const user = (req as any).user;
+  const tasks = getPendingTasks(user.id);
+  res.json({ tasks });
+});
+
 app.post("/api/focus/session", authenticateToken, (req, res) => {
   const user = (req as any).user;
   const { taskId, durationMinutes, completed } = req.body;
@@ -375,17 +368,72 @@ app.get("/api/dashboard", authenticateToken, async (req, res) => {
   const user = (req as any).user;
 
   try {
-    const goals = getGoals(user.id);
+    let goals = getGoals(user.id);
     const activeGoals = goals.filter(g => g.status === 'active');
     const mainGoal = activeGoals.length > 0 ? activeGoals[0] : null;
 
     // Get Today's Next Step (Feature 2)
     const nextStep = getNextAction(user.id);
 
+    // Get all pending tasks to compute deadline stats
+    const pendingTasks = getPendingTasks(user.id);
+
+    // Calculate deadline states
+    const now = new Date();
+    
+    const tasksDueToday: any[] = [];
+    const tasksDueTomorrow: any[] = [];
+    const overdueTasks: any[] = [];
+    const upcomingThisWeek: any[] = [];
+    const emergencyTasks: any[] = [];
+    
+    let nearestTask: any = null;
+    let minDiffMs = Infinity;
+
+    const getDeadlineDate = (t: any) => {
+      const dateStr = t.dateScheduled || t.targetDate; // fallback
+      const timeStr = t.deadlineTime || '18:00';
+      return new Date(`${dateStr}T${timeStr}`);
+    };
+
+    pendingTasks.forEach((t: any) => {
+      const deadline = getDeadlineDate(t);
+      const diffMs = deadline.getTime() - now.getTime();
+      const diffHours = diffMs / (1000 * 60 * 60);
+
+      // Category assignment based on simple date check
+      const deadlineDay = new Date(deadline).toDateString();
+      const todayDay = now.toDateString();
+      
+      const tomorrow = new Date(now);
+      tomorrow.setDate(now.getDate() + 1);
+      const tomorrowDay = tomorrow.toDateString();
+
+      if (diffMs < 0) {
+        overdueTasks.push(t);
+      } else {
+        if (deadlineDay === todayDay) {
+          tasksDueToday.push(t);
+        } else if (deadlineDay === tomorrowDay) {
+          tasksDueTomorrow.push(t);
+        } else if (diffHours <= 168) { // within 7 days
+          upcomingThisWeek.push(t);
+        }
+
+        if (diffHours > 0 && diffHours <= 24) {
+          emergencyTasks.push(t);
+        }
+      }
+
+      if (diffMs > 0 && diffMs < minDiffMs) {
+        minDiffMs = diffMs;
+        nearestTask = t;
+      }
+    });
+
     // Dynamic Progress Bar calculation
     let todayProgress = 0;
     if (mainGoal) {
-      // Fetch details of main goal to count tasks
       const details = getGoalDetails(mainGoal.id, user.id);
       if (details && details.milestones) {
         let total = 0;
@@ -400,7 +448,7 @@ app.get("/api/dashboard", authenticateToken, async (req, res) => {
       }
     }
 
-    // Momentum stats
+    // Momentum stats (relabelled simplified below)
     const stats = getMomentumStats(user.id);
 
     // Greeting Message based on time of day
@@ -413,26 +461,39 @@ app.get("/api/dashboard", authenticateToken, async (req, res) => {
     }
 
     // Generate dynamic AI Suggestion & Motivation Quote
-    let aiSuggestion = "Create a goal to get your personalized, step-by-step guidance!";
-    let motivationQuote = "The secret of getting ahead is getting started. Take one tiny step today.";
+    let aiSuggestion = "Create a goal to activate your Deadline Rescue Engine!";
+    let motivationQuote = "No active deadlines. Stay prepared and schedule your targets.";
 
-    if (nextStep) {
-      aiSuggestion = `Focus on doing this one simple thing: "${nextStep.title}". You don't need to finish everything today, just take this next step.`;
-      motivationQuote = `\"Focus on progress, not perfection. Today's action is your stepping stone.\"`;
+    if (nearestTask) {
+      const deadline = getDeadlineDate(nearestTask);
+      const diffMs = deadline.getTime() - now.getTime();
+      const diffHours = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+      const diffMins = Math.max(0, Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60)));
+      aiSuggestion = `Your nearest deadline is "${nearestTask.title}". You have only ${diffHours}h ${diffMins}m left! Est effort: ${nearestTask.estimatedHours || 1.0} hours. Finish this first!`;
+      motivationQuote = `Deadline Alert: "${nearestTask.title}" is due on ${nearestTask.dateScheduled} at ${nearestTask.deadlineTime || '18:00'}.`;
     } else if (mainGoal) {
-      aiSuggestion = "Great! Your goal is active. Ask your AI Coach to plan your next action, or add a milestone.";
-      motivationQuote = "\"Every giant oak started as a tiny sprout. Your momentum is growing.\"";
+      aiSuggestion = `Your main goal "${mainGoal.title}" is active. Set tasks with precise deadlines to track them!`;
+      motivationQuote = `Goal deadline is set for ${mainGoal.targetDate}. Keep driving forward.`;
     }
 
     res.json({
       greeting,
       focusGoal: mainGoal,
       todayProgress,
-      nextStep,
+      nextStep: nearestTask || nextStep,
       aiSuggestion,
       motivationQuote,
       momentumScore: stats,
       weeklyJourney: stats.weeklyJourney,
+      deadlineStats: {
+        dueToday: tasksDueToday,
+        dueTomorrow: tasksDueTomorrow,
+        overdue: overdueTasks,
+        upcoming: upcomingThisWeek,
+        emergency: emergencyTasks,
+        nearestTask,
+        nearestTimeLeft: minDiffMs !== Infinity ? minDiffMs : null
+      }
     });
   } catch (error) {
     console.error("Dashboard Loading Error:", error);
@@ -457,15 +518,24 @@ app.get("/api/smart-schedule", authenticateToken, async (req, res) => {
 
   try {
     const settings = getSettings(user.id);
-    const nextStep = getNextAction(user.id);
-    const taskTitle = nextStep ? nextStep.title : "Reflect on your current focus and set your goals";
+    const pendingTasks = getPendingTasks(user.id);
+    
+    // Sort by deadline date & time
+    const sortedTasks = [...pendingTasks].sort((a: any, b: any) => {
+      const dtA = new Date(`${a.dateScheduled}T${a.deadlineTime || '18:00'}`);
+      const dtB = new Date(`${b.dateScheduled}T${b.deadlineTime || '18:00'}`);
+      return dtA.getTime() - dtB.getTime();
+    });
 
-    const prompt = `You are a gentle scheduling assistant. Design a balanced, supportive, calm daily schedule for a user.
-Their working hours are: "${settings.workingHours}".
-Their preferred break frequency is: "${settings.breakPreference}".
-Their primary task to integrate is: "${taskTitle}".
+    const tasksCtx = sortedTasks.map(t => `- "${t.title}" (Due: ${t.dateScheduled} at ${t.deadlineTime || '18:00'}, Est Effort: ${t.estimatedHours || 1.0}h, Priority: ${t.priority})`).join("\n");
 
-Create a healthy plan with Morning, Afternoon, and Evening blocks. Integrate meals, breaks, work, study, and relaxation. Make it feel highly achievable, reducing decision fatigue.
+    const prompt = `You are "The Last-Minute Life Saver" schedule generator.
+Your job is to generate a realistic, time-blocked daily plan based strictly on the user's upcoming deadlines.
+The user's defined working hours are: "${settings.workingHours}".
+Here is the list of pending tasks, SORTED BY NEAREST DEADLINE FIRST:
+${tasksCtx || "No pending tasks."}
+
+Create an hourly plan containing Morning, Afternoon, and Evening blocks. Each block must specify exact hours (e.g. "08:00 AM - 09:30 AM") and target the specific tasks to finish first before their deadlines. Include breaks and meals to maintain velocity. Do NOT use technical words like "Cognitive Planner" or "Pilot" or "Execution Matrix". Use simple human names like "Morning Schedule", "Today's Tasks", "Finish First".
 Your response MUST match the JSON schema exactly.`;
 
     const response = await ai.models.generateContent({
@@ -481,8 +551,8 @@ Your response MUST match the JSON schema exactly.`;
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  time: { type: Type.STRING, description: "e.g. '08:00 AM'" },
-                  activity: { type: Type.STRING, description: "e.g. 'Light breakfast and tea'" },
+                  time: { type: Type.STRING, description: "e.g. '08:00 AM - 09:00 AM'" },
+                  activity: { type: Type.STRING, description: "e.g. 'Finish Chapter 1'" },
                   type: { type: Type.STRING, description: "e.g. 'meal', 'work', 'break', 'relax'" },
                 },
                 required: ["time", "activity", "type"],
@@ -493,9 +563,9 @@ Your response MUST match the JSON schema exactly.`;
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  time: { type: Type.STRING },
-                  activity: { type: Type.STRING },
-                  type: { type: Type.STRING },
+                  time: { type: Type.STRING, description: "e.g. '02:00 PM - 03:30 PM'" },
+                  activity: { type: Type.STRING, description: "e.g. 'Assignment Submission'" },
+                  type: { type: Type.STRING, description: "e.g. 'meal', 'work', 'break', 'relax'" },
                 },
                 required: ["time", "activity", "type"],
               },
@@ -505,9 +575,9 @@ Your response MUST match the JSON schema exactly.`;
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  time: { type: Type.STRING },
-                  activity: { type: Type.STRING },
-                  type: { type: Type.STRING },
+                  time: { type: Type.STRING, description: "e.g. '07:00 PM - 08:30 PM'" },
+                  activity: { type: Type.STRING, description: "e.g. 'Prepare Presentation'" },
+                  type: { type: Type.STRING, description: "e.g. 'meal', 'work', 'break', 'relax'" },
                 },
                 required: ["time", "activity", "type"],
               },
@@ -526,19 +596,18 @@ Your response MUST match the JSON schema exactly.`;
     // Fallback schedule
     const fallbackSchedule = {
       morning: [
-        { time: "08:30 AM", activity: "Gentle Morning Warm-up & Coffee", type: "meal" },
-        { time: "09:00 AM", activity: "Core focus block (Start next step)", type: "work" },
-        { time: "10:30 AM", activity: "Relaxing Stretch & Hydration break", type: "break" },
+        { time: "08:00 AM - 09:00 AM", activity: "Finish Chapter 1", type: "work" },
+        { time: "09:15 AM - 10:30 AM", activity: "Prepare Presentation", type: "work" },
+        { time: "10:30 AM - 11:00 AM", activity: "Stretch & Hydrate", type: "break" },
       ],
       afternoon: [
-        { time: "12:30 PM", activity: "Nourishing Lunch and light walk", type: "meal" },
-        { time: "02:00 PM", activity: "Secondary focus block (Break down tasks)", type: "work" },
-        { time: "03:30 PM", activity: "Mindfulness break or quiet pause", type: "break" },
+        { time: "12:00 PM - 01:00 PM", activity: "Lunch", type: "meal" },
+        { time: "02:00 PM - 03:30 PM", activity: "Assignment Submission", type: "work" },
+        { time: "03:30 PM - 04:00 PM", activity: "Reflection & Next Step check", type: "relax" },
       ],
       evening: [
-        { time: "06:30 PM", activity: "Warm Dinner and unwinding", type: "meal" },
-        { time: "08:00 PM", activity: "Achievement Garden check-in & reflection", type: "relax" },
-        { time: "09:30 PM", activity: "Calm relaxation, reading or listening to music", type: "relax" },
+        { time: "06:00 PM - 07:00 PM", activity: "Dinner", type: "meal" },
+        { time: "08:00 PM - 09:00 PM", activity: "Review Next Deadlines", type: "relax" },
       ],
     };
     res.json({ schedule: fallbackSchedule });
@@ -573,28 +642,38 @@ app.post("/api/coach/chat", authenticateToken, async (req, res) => {
     // 2. Load context (active goal and next action)
     const goals = getGoals(user.id);
     const activeGoals = goals.filter(g => g.status === 'active');
-    const mainGoal = activeGoals.length > 0 ? activeGoals[0] : null;
-    const nextStep = getNextAction(user.id);
+    const pendingTasks = getPendingTasks(user.id);
     const history = getChatHistory(user.id, 20);
 
+    // Format active goals and tasks for the AI Coach context
+    const goalsCtx = activeGoals.map(g => `- Goal: "${g.title}"\n  Deadline: ${g.targetDate} at ${(g as any).deadlineTime || '18:00'}\n  Est Effort: ${(g as any).estimatedHours || 0}h\n  Priority: ${(g as any).priority || 'medium'}`).join("\n");
+    const tasksCtx = pendingTasks.map(t => `- Task: "${t.title}"\n  Deadline: ${t.dateScheduled} at ${(t as any).deadlineTime || '18:00'}\n  Est Effort: ${(t as any).estimatedHours || 1}h\n  Priority: ${(t as any).priority || 'medium'}`).join("\n");
+
     // 3. Setup Gemini prompt with historical context & user state
-    const systemInstruction = `You are Momentum, a friendly, ultra-supportive, empathetic AI productivity coach.
-Your mission is to help people defeat procrastination, reduce decision fatigue, and gain positive momentum.
-You focus entirely on the "smallest next step." You never make the user feel guilty about deadlines or missed tasks.
-Instead, you encourage, motivate, break down goals, and celebrate active efforts.
+    const systemInstruction = `You are "The Last-Minute Life Saver" AI Deadline Coach.
+Your mission is to help people defeat extreme procrastination and last-minute deadline panic by analyzing remaining hours, prioritizing task order, and crafting immediate action schedules.
 
-Current User State:
-- Active Goal: ${mainGoal ? `"${mainGoal.title}" (target: ${mainGoal.targetDate})` : "No goal created yet"}
-- Next Best Action: ${nextStep ? `"${nextStep.title}"` : "All current tasks completed!"}
+Current Local Time is: ${new Date().toLocaleString()}
 
-Guidelines:
-- Keep responses relatively brief, friendly, warm, and highly conversational.
-- Use rounded bullet points or friendly spacing when listing items.
-- Suggest very small, actionable steps (e.g. "Just open the document," "Focus for 10 minutes").
-- Celebrate small accomplishments. Avoid sounding technical, robotic, or clinical. Use gentle words.`;
+User's Active Goal Context:
+${goalsCtx || "No active goals created yet."}
+
+User's Pending Tasks Context (sorted by nearest deadline):
+${tasksCtx || "No pending tasks."}
+
+CRITICAL RULES FOR YOUR BEHAVIOR:
+1. NEVER give generic, vague, or purely emotional motivational advice (e.g. "Just believe in yourself", "You've got this! Keep going"). Every piece of advice must be concrete, actionable, and tied directly to the time remaining.
+2. ALWAYS analyze exact deadlines. Calculate DAYS, HOURS, and MINUTES remaining between the current local time and the task deadlines.
+3. EVERY single response you send MUST reference the user's specific deadline date and time.
+4. EVERY single recommendation you provide MUST clearly and explicitly answer these 4 crucial questions:
+   - What should I finish first?
+   - How much time is left?
+   - Can I still finish before the deadline?
+   - What should I do right now?
+5. Generate an urgent recommended schedule (e.g., "Recommended schedule: 2 hours now, 2 hours tonight... Finish before 10:00 AM").
+6. Keep your language simple and friendly, but highly focused and urgent. Do NOT use technical buzzwords like "Momentum Analysis", "Cognitive Planner", or "Execution Matrix". Use words like "Today's Tasks", "Due Soon", "Time Left", "Finish First".`;
 
     // Reconstruct Gemini chat history correctly
-    // Convert to Gemini API format: [{role: "user" | "model", parts: [{text: string}]}]
     const contents = history.map(chat => ({
       role: chat.sender === "user" ? "user" : "model",
       parts: [{ text: chat.message }],
@@ -608,7 +687,7 @@ Guidelines:
       },
     });
 
-    const reply = response.text || "I'm right here with you. What's one tiny step we can take together to make today a little lighter?";
+    const reply = response.text || "I am analyzing your deadlines. Let's make sure we finish before the time runs out! What should we finish first?";
 
     // 4. Save coach reply
     addChatMessage(user.id, "coach", reply);
@@ -616,7 +695,7 @@ Guidelines:
     res.json({ reply });
   } catch (error) {
     console.error("AI Coach Chat Error:", error);
-    const fallbackReply = "I'm experiencing a quick momentary pause, but I'm still cheering you on! Remember: any action, no matter how small, breaks procrastination. What's one simple thing you can open or view right now?";
+    const fallbackReply = "I'm calculating your remaining hours. Every minute matters right now. To finish before your deadline, let's open the single most important task and focus on it for 25 minutes. Can we do that right now?";
     addChatMessage(user.id, "coach", fallbackReply);
     res.json({ reply: fallbackReply });
   }

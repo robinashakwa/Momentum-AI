@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import Auth from "./components/Auth.tsx";
+import LandingPage from "./components/LandingPage.tsx";
 import Dashboard from "./components/Dashboard.tsx";
 import GoalJourney from "./components/GoalJourney.tsx";
 import AICoach from "./components/AICoach.tsx";
@@ -24,6 +25,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>("Dashboard");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showAuth, setShowAuth] = useState(false);
 
   // Stats trigger to reload stats across tabs
   const [statsTrigger, setStatsTrigger] = useState(0);
@@ -83,9 +85,22 @@ export default function App() {
     );
   }
 
-  // Render Auth screen if not logged in
+  // Render Landing Page or Auth screen if not logged in
   if (!token || !user) {
-    return <Auth onLoginSuccess={handleLoginSuccess} />;
+    if (showAuth) {
+      return (
+        <Auth 
+          onLoginSuccess={handleLoginSuccess} 
+          onBackToLanding={() => setShowAuth(false)} 
+        />
+      );
+    }
+    return (
+      <LandingPage 
+        onGetStarted={() => setShowAuth(true)} 
+        onSignIn={() => setShowAuth(true)} 
+      />
+    );
   }
 
   // Navigation Items
@@ -106,12 +121,12 @@ export default function App() {
         
         {/* Brand Header */}
         <div className="flex items-center gap-2.5 px-2">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center shadow-sm shadow-emerald-500/25">
+          <div className="w-8 h-8 rounded-lg bg-red-600 flex items-center justify-center shadow-sm shadow-red-600/25">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
           <div>
-            <span className="text-sm font-bold text-slate-950 block leading-tight tracking-tight">Momentum AI</span>
-            <span className="text-[10px] text-slate-400 font-medium">Build consistency</span>
+            <span className="text-sm font-bold text-slate-950 block leading-tight tracking-tight">Last-Minute Rescuer</span>
+            <span className="text-[10px] text-slate-400 font-medium">Beat the Deadline</span>
           </div>
         </div>
 
@@ -164,10 +179,10 @@ export default function App() {
       {/* MOBILE HEADER */}
       <div className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 z-40 px-4 flex justify-between items-center">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-emerald-500 flex items-center justify-center">
+          <div className="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center">
             <Sparkles className="w-3.5 h-3.5 text-white" />
           </div>
-          <span className="text-sm font-bold text-slate-950 font-sans tracking-tight">Momentum AI</span>
+          <span className="text-sm font-bold text-slate-950 font-sans tracking-tight">Last-Minute Rescuer</span>
         </div>
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}

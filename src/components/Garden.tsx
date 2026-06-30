@@ -7,6 +7,7 @@ import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { Sparkles, Sprout, Heart, Leaf, Trophy, Gift, ArrowUpRight } from "lucide-react";
 import { Achievement } from "../types.js";
+import gardenImg from "../assets/images/digital_garden_illustration_1782840634439.jpg";
 
 interface GardenProps {
   token: string;
@@ -104,6 +105,25 @@ export default function Garden({ token }: GardenProps) {
             <div>
               <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active Garden</span>
               <span className="text-xs font-bold text-slate-800">{achievements.length} plants growing</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Beautiful Garden Banner */}
+      <div className="relative overflow-hidden rounded-[32px] border border-slate-100 bg-white shadow-sm">
+        <div className="h-64 sm:h-72 w-full overflow-hidden relative">
+          <img 
+            src={gardenImg} 
+            alt="Virtual Achievement Garden Illustration" 
+            className="w-full h-full object-cover"
+            referrerPolicy="no-referrer"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/60 via-slate-900/10 to-transparent flex items-end p-6 sm:p-8">
+            <div className="text-white">
+              <span className="text-[10px] font-extrabold uppercase tracking-widest bg-emerald-500/90 backdrop-blur-xs px-2.5 py-1 rounded-full">Digital Sanctuary</span>
+              <h3 className="text-xl sm:text-2xl font-extrabold tracking-tight mt-2.5 font-sans">The Meadow of Consistency</h3>
+              <p className="text-xs text-white/95 mt-1 font-semibold">Cultivated by your real-life productivity and focus hours.</p>
             </div>
           </div>
         </div>

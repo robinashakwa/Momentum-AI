@@ -6,43 +6,57 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
-  Flame, CheckCircle2, Circle, AlertCircle, ArrowRight, Sparkles, 
-  Smile, Calendar, BrainCircuit, Coffee, BookOpen, Sun, Moon, LogIn, Clock, RefreshCw, ChevronDown, ChevronUp, CheckCircle, Compass, Heart
+  CheckCircle2, Circle, ArrowRight, Sparkles, 
+  Clock, RefreshCw, Compass, Plus, Trash, AlertCircle, Calendar, Zap, Flame
 } from "lucide-react";
-import { DashboardData, Task, Reflection } from "../types.js";
+import { DashboardData } from "../types.js";
 
 interface DashboardProps {
   token: string;
   onSelectTab: (tab: string) => void;
-  onGoalCreated: () => void; // Refresh dashboard when goal is modified
+  onGoalCreated: () => void;
 }
 
 export default function Dashboard({ token, onSelectTab, onGoalCreated }: DashboardProps) {
-  const [data, setData] = useState<DashboardData | null>(null);
+  const [data, setData] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // Reflection state
-  const [showReflectionModal, setShowReflectionModal] = useState(false);
-  const [wentWell, setWentWell] = useState("");
-  const [slowedDown, setSlowedDown] = useState("");
-  const [feeling, setFeeling] = useState("neutral");
-  const [savingReflection, setSavingReflection] = useState(false);
-  const [savedAdvice, setSavedAdvice] = useState<string | null>(null);
+  const [allGoals, setAllGoals] = useState<any[]>([]);
+  const [selectedGoalId, setSelectedGoalId] = useState<number | "">("");
 
-  // Smart Schedule state
-  const [schedule, setSchedule] = useState<any>(null);
-  const [loadingSchedule, setLoadingSchedule] = useState(false);
+  // New Goal Form State
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [goalTitle, setGoalTitle] = useState("");
+  const [goalDescription, setGoalDescription] = useState("");
+  const [goalTargetDate, setGoalTargetDate] = useState("");
+  const [goalDeadlineTime, setGoalDeadlineTime] = useState("18:00");
+  const [goalEstimatedHours, setGoalEstimatedHours] = useState("5");
+  const [goalPriority, setGoalPriority] = useState("medium");
+  const [creatingGoal, setCreatingGoal] = useState(false);
 
-  // Task Mini-tasks details
-  const [isTaskExpanded, setIsTaskExpanded] = useState(false);
-  const [detailedTask, setDetailedTask] = useState<any>(null);
+  // New Task Form State
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const [taskDeadlineDate, setTaskDeadlineDate] = useState("");
+  const [taskDeadlineTime, setTaskDeadlineTime] = useState("18:00");
+  const [taskEstimatedHours, setTaskEstimatedHours] = useState("1.0");
+  const [taskPriority, setTaskPriority] = useState("medium");
+  const [addingTask, setAddingTask] = useState(false);
+  const [formError, setFormError] = useState("");
+
+  // Emergency Mode & Smart Schedule State
+  const [emergencySchedule, setEmergencySchedule] = useState<any | null>(null);
+  const [loadingEmergencySchedule, setLoadingEmergencySchedule] = useState(false);
+
+  // Remaining Time Counter State
+  const [timeLeftStr, setTimeLeftStr] = useState("");
 
   const fetchDashboardData = async (isSilent = false) => {
     if (!isSilent) setLoading(true);
     else setRefreshing(true);
 
     try {
+      // 1. Fetch dashboard stats
       const response = await fetch("/api/dashboard", {
         headers: { "Authorization": `Bearer ${token}` }
       });
@@ -50,12 +64,19 @@ export default function Dashboard({ token, onSelectTab, onGoalCreated }: Dashboa
         const result = await response.json();
         setData(result);
         
-        // If there's a next step, let's fetch full goal details to show mini-tasks
-        if (result.nextStep) {
-          fetchTaskDetails(result.nextStep.goalId);
-        } else {
-          setDetailedTask(null);
+        // Auto select focus goal if available
+        if (result.focusGoal) {
+          setSelectedGoalId(result.focusGoal.id);
         }
+      }
+
+      // 2. Fetch all goals
+      const goalsRes = await fetch("/api/goals", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (goalsRes.ok) {
+        const goalsResult = await goalsRes.json();
+        setAllGoals(goalsResult.goals || []);
       }
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
@@ -65,80 +86,182 @@ export default function Dashboard({ token, onSelectTab, onGoalCreated }: Dashboa
     }
   };
 
-  const fetchTaskDetails = async (goalId: number) => {
-    try {
-      const response = await fetch(`/api/goals/${goalId}`, {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const result = await response.json();
-        // Locate the current next step in the detailed goal
-        if (result.goal && result.goal.milestones) {
-          let foundTask: any = null;
-          for (const m of result.goal.milestones) {
-            for (const t of m.tasks) {
-              if (t.id === data?.nextStep?.id || (foundTask === null && t.status === 'pending')) {
-                foundTask = t;
-                break;
-              }
-            }
-            if (foundTask) break;
-          }
-          setDetailedTask(foundTask);
-        }
-      }
-    } catch (e) {
-      console.error("Error fetching task details:", e);
-    }
-  };
-
-  const fetchSmartSchedule = async () => {
-    setLoadingSchedule(true);
-    try {
-      const response = await fetch("/api/smart-schedule", {
-        headers: { "Authorization": `Bearer ${token}` }
-      });
-      if (response.ok) {
-        const result = await response.json();
-        setSchedule(result.schedule);
-      }
-    } catch (error) {
-      console.error("Error generating smart schedule:", error);
-    } finally {
-      setLoadingSchedule(false);
-    }
-  };
-
   useEffect(() => {
     fetchDashboardData();
-    fetchSmartSchedule();
   }, [token]);
 
-  const handleCompleteTask = async (taskId: number) => {
+  // Tick remaining time of nearest deadline every second
+  useEffect(() => {
+    const nearest = data?.deadlineStats?.nearestTask;
+    if (!nearest) {
+      setTimeLeftStr("");
+      return;
+    }
+
+    const interval = setInterval(() => {
+      const targetStr = nearest.dateScheduled || nearest.targetDate;
+      const timeStr = nearest.deadlineTime || '18:00';
+      const deadline = new Date(`${targetStr}T${timeStr}`);
+      const now = new Date();
+      const diffMs = deadline.getTime() - now.getTime();
+
+      if (diffMs <= 0) {
+        setTimeLeftStr("🚨 Overdue!");
+      } else {
+        const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+        const secs = Math.floor((diffMs % (1000 * 60)) / 1000);
+
+        let str = "";
+        if (days > 0) str += `${days}d `;
+        str += `${hours}h ${mins}m ${secs}s`;
+        setTimeLeftStr(str);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [data?.deadlineStats?.nearestTask]);
+
+  // Generate Emergency Rescue Schedule
+  const generateEmergencyRescue = async () => {
+    setLoadingEmergencySchedule(true);
     try {
-      const response = await fetch(`/api/tasks/${taskId}/status`, {
+      const res = await fetch("/api/smart-schedule", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const result = await res.json();
+        setEmergencySchedule(result.schedule);
+      }
+    } catch (err) {
+      console.error("Emergency rescue gen failed", err);
+    } finally {
+      setLoadingEmergencySchedule(false);
+    }
+  };
+
+  const handleCreateGoal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!goalTitle.trim() || !goalTargetDate || !goalDeadlineTime) {
+      setFormError("Title, Deadline Date and Time are required!");
+      return;
+    }
+
+    setCreatingGoal(true);
+    setFormError("");
+    try {
+      const response = await fetch("/api/goals", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`
         },
-        body: JSON.stringify({ status: "completed" })
+        body: JSON.stringify({
+          title: goalTitle.trim(),
+          description: goalDescription,
+          targetDate: goalTargetDate,
+          deadlineTime: goalDeadlineTime,
+          estimatedHours: parseFloat(goalEstimatedHours) || 0,
+          priority: goalPriority,
+          milestones: [{ title: "Primary Target Deliverables", order_index: 0 }]
+        })
       });
-      
+
       if (response.ok) {
-        // Trigger completion animation, reload data
-        fetchDashboardData(true);
-        onGoalCreated(); // Notify achievements
+        const resJson = await response.json();
+        setGoalTitle("");
+        setGoalDescription("");
+        setGoalTargetDate("");
+        setGoalDeadlineTime("18:00");
+        setGoalEstimatedHours("5");
+        setGoalPriority("medium");
+        setShowGoalModal(false);
+        await fetchDashboardData(true);
+        onGoalCreated();
+      } else {
+        const errJson = await response.json();
+        setFormError(errJson.error || "Failed to create goal category.");
       }
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
+      setFormError("Server error. Please try again.");
+    } finally {
+      setCreatingGoal(false);
     }
   };
 
-  const handleToggleMiniTask = async (miniTaskId: number, currentStatus: string) => {
+  const handleAddTask = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError("");
+
+    if (!selectedGoalId) {
+      setFormError("Please select a Goal Category for this task.");
+      return;
+    }
+    if (!taskTitle.trim() || !taskDeadlineDate || !taskDeadlineTime) {
+      setFormError("Task title, Deadline Date and Deadline Time are strictly required!");
+      return;
+    }
+
+    setAddingTask(true);
+    try {
+      const response = await fetch(`/api/goals/${selectedGoalId}/tasks`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          title: taskTitle.trim(),
+          description: taskDescription,
+          deadlineDate: taskDeadlineDate,
+          deadlineTime: taskDeadlineTime,
+          estimatedHours: parseFloat(taskEstimatedHours) || 1.0,
+          priority: taskPriority
+        })
+      });
+
+      if (response.ok) {
+        setTaskTitle("");
+        setTaskDescription("");
+        setTaskDeadlineDate("");
+        setTaskDeadlineTime("18:00");
+        setTaskEstimatedHours("1.0");
+        setTaskPriority("medium");
+        await fetchDashboardData(true);
+        onGoalCreated();
+      } else {
+        const err = await response.json();
+        setFormError(err.error || "Failed to create task.");
+      }
+    } catch (err) {
+      console.error(err);
+      setFormError("Failed to add task manually.");
+    } finally {
+      setAddingTask(false);
+    }
+  };
+
+  const handleDeleteTask = async (taskId: number) => {
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (response.ok) {
+        await fetchDashboardData(true);
+        onGoalCreated();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleToggleTaskStatus = async (taskId: number, currentStatus: string) => {
     const newStatus = currentStatus === 'completed' ? 'pending' : 'completed';
     try {
-      const response = await fetch(`/api/mini-tasks/${miniTaskId}/status`, {
+      const response = await fetch(`/api/tasks/${taskId}/status`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -146,70 +269,13 @@ export default function Dashboard({ token, onSelectTab, onGoalCreated }: Dashboa
         },
         body: JSON.stringify({ status: newStatus })
       });
-
       if (response.ok) {
-        // Toggle in-place temporarily for quick response, then re-fetch
-        if (detailedTask) {
-          const updatedMini = detailedTask.miniTasks.map((mt: any) => {
-            if (mt.id === miniTaskId) return { ...mt, status: newStatus };
-            return mt;
-          });
-          setDetailedTask({ ...detailedTask, miniTasks: updatedMini });
-          
-          // Check if all are completed now
-          const allDone = updatedMini.every((m: any) => m.status === 'completed');
-          if (allDone) {
-            handleCompleteTask(detailedTask.id);
-          } else {
-            fetchDashboardData(true);
-          }
-        }
+        await fetchDashboardData(true);
+        onGoalCreated();
       }
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error(err);
     }
-  };
-
-  const handleSaveReflection = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!wentWell || !slowedDown) return;
-
-    setSavingReflection(true);
-    const todayStr = new Date().toISOString().split('T')[0];
-
-    try {
-      const response = await fetch("/api/reflections", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          date: todayStr,
-          wentWell,
-          slowedDown,
-          feeling
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        setSavedAdvice(result.tomorrowAdvice);
-        fetchDashboardData(true);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setSavingReflection(false);
-    }
-  };
-
-  const closeReflectionModal = () => {
-    setShowReflectionModal(false);
-    setSavedAdvice(null);
-    setWentWell("");
-    setSlowedDown("");
-    setFeeling("neutral");
   };
 
   if (loading) {
@@ -217,570 +283,621 @@ export default function Dashboard({ token, onSelectTab, onGoalCreated }: Dashboa
       <div className="flex flex-col items-center justify-center min-h-[70vh] gap-4">
         <div className="relative w-12 h-12">
           <div className="absolute top-0 left-0 w-full h-full border-4 border-stone-100 rounded-full"></div>
-          <div className="absolute top-0 left-0 w-full h-full border-4 border-t-emerald-500 rounded-full animate-spin"></div>
+          <div className="absolute top-0 left-0 w-full h-full border-4 border-t-red-500 rounded-full animate-spin"></div>
         </div>
-        <p className="text-sm font-medium text-stone-500 font-sans">Loading your day...</p>
+        <p className="text-sm font-medium text-stone-500 font-sans animate-pulse">Running Deadline Rescue Engine...</p>
       </div>
     );
   }
 
-  const focusGoal = data?.focusGoal;
-  const nextStep = data?.nextStep;
-  const momentum = data?.momentumScore;
-
-  // Render Feeling Emoji
-  const getFeelingEmoji = (feel: string) => {
-    switch (feel) {
-      case "happy": return "😊";
-      case "tired": return "🥱";
-      case "focused": return "🧠";
-      case "anxious": return "🥺";
-      default: return "😐";
-    }
+  const stats = data?.deadlineStats || {
+    dueToday: [], dueTomorrow: [], overdue: [], upcoming: [], emergency: [], nearestTask: null, nearestTimeLeft: null
   };
 
+  const isEmergencyActive = stats.emergency.length > 0;
+
   return (
-    <div className="space-y-8 pb-12">
-      {/* Top Banner Greeting */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-100 pb-6">
+    <div className="max-w-5xl mx-auto space-y-8 pb-16 font-sans">
+      
+      {/* Red Alert Banner for Emergency Mode */}
+      {isEmergencyActive && (
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-50 border border-red-200 rounded-2xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-100 text-red-600 rounded-xl shrink-0 animate-bounce">
+              <Flame className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-extrabold text-red-800">EMERGENCY MODE ACTIVATED</h4>
+              <p className="text-xs text-red-600">You have {stats.emergency.length} task(s) due within 24 hours! Do not panic. We have a rescue plan.</p>
+            </div>
+          </div>
+          <button
+            onClick={generateEmergencyRescue}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs rounded-xl cursor-pointer transition-all shrink-0 flex items-center gap-1.5 shadow-sm"
+          >
+            <Zap className="w-3.5 h-3.5" />
+            Get Emergency Schedule
+          </button>
+        </motion.div>
+      )}
+
+      {/* Header Panel */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-stone-100 pb-6">
         <div>
-          <h1 className="text-3.5xl font-bold tracking-tight text-slate-900 font-sans flex items-center gap-2">
-            {data?.greeting}
+          <span className="text-[10px] uppercase tracking-widest font-extrabold text-red-600 bg-red-50 px-2.5 py-0.5 rounded-full inline-block mb-1.5">Last-Minute Life Saver</span>
+          <h1 className="text-3xl font-extrabold tracking-tight text-stone-900 font-sans">
+            Deadline Rescue Hub
           </h1>
-          <p className="text-sm text-slate-500 mt-1 font-sans">
-            Here's your mindful roadmap to build active momentum today.
+          <p className="text-xs text-stone-500 mt-0.5">
+            Real-time deadline tracking, urgent action plan generators, and simple to-do task blocks.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => { fetchDashboardData(); fetchSmartSchedule(); }}
+            onClick={() => { fetchDashboardData(); }}
             disabled={refreshing}
-            className="flex items-center gap-1.5 px-3.5 py-2 border border-slate-200 bg-white hover:bg-slate-50 rounded-xl text-xs font-semibold text-slate-600 transition-all cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 border border-stone-200 bg-white hover:bg-stone-50 rounded-xl text-xs font-bold text-stone-600 transition-all cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} />
-            Sync Plan
+            Sync Deadlines
           </button>
           <button
-            onClick={() => setShowReflectionModal(true)}
-            className="flex items-center gap-1.5 px-4.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-lg shadow-emerald-600/10 transition-all cursor-pointer"
+            onClick={() => setShowGoalModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
           >
-            <Compass className="w-3.5 h-3.5" />
-            Reflect on Today
+            <Plus className="w-3.5 h-3.5" />
+            New Goal Category
           </button>
         </div>
       </div>
 
-      {/* Main Grid: Left is Focus & Actions, Right is Coach & Score */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        
-        {/* Left 2 Columns */}
-        <div className="lg:col-span-2 space-y-8">
-          
-          {/* Today's Next Step (Feature 2) - Spotlight */}
-          <div className="bg-white rounded-[32px] p-8 shadow-sm border border-slate-100 flex flex-col md:flex-row items-center justify-between gap-8">
-            {nextStep ? (
-              <div className="flex-1 space-y-6">
-                <div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-bold rounded-full uppercase tracking-wider">Today's Focus</span>
-                    <span className="text-slate-300">•</span>
-                    <span className="text-slate-500 text-sm font-medium">Goal: {focusGoal?.title}</span>
-                  </div>
-                  <div className="flex items-start gap-4">
-                    <button 
-                      onClick={() => handleCompleteTask(nextStep.id)}
-                      className="mt-1.5 flex-shrink-0 text-slate-300 hover:text-emerald-500 transition-colors cursor-pointer"
-                      title="Mark Completed"
-                    >
-                      <Circle className="w-8 h-8" />
-                    </button>
-                    <div>
-                      <h3 className="text-3xl font-bold text-slate-900 mb-2 leading-tight">{nextStep.title}</h3>
-                      <p className="text-sm text-slate-500 italic">"{data?.motivationQuote}"</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Expand Mini-tasks block */}
-                <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100">
-                  <button
-                    onClick={() => {
-                      setIsTaskExpanded(!isTaskExpanded);
-                      if (!detailedTask) fetchTaskDetails(nextStep.goalId);
-                    }}
-                    className="w-full flex justify-between items-center text-xs font-bold text-slate-500 cursor-pointer"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <BrainCircuit className="w-4 h-4 text-emerald-600" />
-                      AI Step Breakdown ({detailedTask?.miniTasks?.filter((m: any) => m.status === 'completed').length || 0}/{detailedTask?.miniTasks?.length || 0} mini-steps)
-                    </span>
-                    {isTaskExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                  </button>
-
-                  {isTaskExpanded && (
-                    <motion.div 
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      className="mt-3 space-y-2 pt-2 border-t border-slate-200/50"
-                    >
-                      {detailedTask?.miniTasks && detailedTask.miniTasks.length > 0 ? (
-                        detailedTask.miniTasks.map((mt: any) => (
-                          <div 
-                            key={mt.id} 
-                            className="flex items-center justify-between text-xs py-2.5 px-3 bg-white rounded-xl border border-slate-100 hover:border-slate-200/80 transition-all"
-                          >
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleToggleMiniTask(mt.id, mt.status)}
-                                className="text-slate-300 hover:text-emerald-500 transition-colors cursor-pointer"
-                              >
-                                {mt.status === 'completed' ? (
-                                  <CheckCircle className="w-5 h-5 text-emerald-500 fill-emerald-50" />
-                                ) : (
-                                  <Circle className="w-5 h-5" />
-                                )}
-                              </button>
-                              <span className={`text-slate-700 font-medium ${mt.status === 'completed' ? 'line-through text-slate-400' : ''}`}>
-                                {mt.title}
-                              </span>
-                            </div>
-                            <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-400">
-                              Step
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-xs text-slate-400">Loading breakdown plan...</p>
-                      )}
-                    </motion.div>
-                  )}
-                </div>
-
-                <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                  <button
-                    onClick={() => onSelectTab("Focus Timer")}
-                    className="px-8 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold shadow-lg shadow-emerald-600/10 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <Clock className="w-4 h-4" />
-                    Start Focus Session
-                  </button>
-                  <button
-                    onClick={() => onSelectTab("Goals & Journeys")}
-                    className="px-8 py-3.5 bg-slate-50 text-slate-700 hover:bg-slate-100 rounded-2xl font-bold transition-all border border-slate-200 cursor-pointer"
-                  >
-                    Review Roadmap
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 space-y-4 w-full">
-                <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mx-auto text-slate-400">
-                  <CheckCircle2 className="w-6 h-6" />
-                </div>
-                <div>
-                  <h4 className="text-base font-semibold text-slate-800">Your Slate is Clean!</h4>
-                  <p className="text-xs text-slate-400 max-w-sm mx-auto mt-1">
-                    No recommended steps pending right now. Start building momentum by creating a new Goal journey.
-                  </p>
-                </div>
-                <button
-                  onClick={() => onSelectTab("Goals & Journeys")}
-                  className="inline-flex items-center gap-1 px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold shadow-sm transition-colors cursor-pointer"
-                >
-                  Create a Goal Journey
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-
-            {nextStep && (
-              <div className="w-64 h-64 bg-emerald-50 rounded-full flex items-center justify-center shrink-0 relative">
-                <div className="absolute inset-0 border-4 border-emerald-100 rounded-full border-dashed animate-spin-slow"></div>
-                <div className="text-center">
-                  <span className="text-5xl">🌱</span>
-                  <p className="text-emerald-700 font-bold mt-2">Growing Fast</p>
-                  <p className="text-[10px] text-emerald-600 font-semibold uppercase tracking-wider mt-0.5">🚀 Active Vibe</p>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Smart Schedule (Feature 6) */}
-          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-8">
-            <div className="flex justify-between items-center mb-6">
+      {/* EMERGENCY RESCUE INTERFACE (SECTION 10) */}
+      {emergencySchedule && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-stone-900 text-white rounded-3xl p-6 space-y-6 shadow-xl border border-stone-800"
+        >
+          <div className="flex items-center justify-between border-b border-stone-800 pb-4">
+            <div className="flex items-center gap-2.5">
+              <Zap className="w-5 h-5 text-amber-400 animate-pulse" />
               <div>
-                <h3 className="text-lg font-bold text-slate-900">Your AI-Balanced Schedule</h3>
-                <p className="text-xs text-slate-400">Custom hourly sequence crafted for natural pauses and maximum calm.</p>
-              </div>
-              <button
-                onClick={fetchSmartSchedule}
-                disabled={loadingSchedule}
-                className="p-2 border border-slate-200 hover:bg-slate-50 rounded-xl text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-                title="Regenerate Schedule"
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingSchedule ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-
-            {loadingSchedule ? (
-              <div className="py-12 flex flex-col items-center justify-center gap-2">
-                <RefreshCw className="w-6 h-6 text-emerald-500 animate-spin" />
-                <p className="text-xs text-slate-400">Rebalancing your day...</p>
-              </div>
-            ) : schedule ? (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Morning */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-full w-max">
-                    <Sun className="w-3.5 h-3.5" />
-                    Morning
-                  </div>
-                  <div className="space-y-2">
-                    {schedule.morning?.map((item: any, i: number) => (
-                      <div key={i} className="p-3.5 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col gap-1">
-                        <span className="text-[10px] font-bold text-slate-400 font-mono flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {item.time}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-700 leading-tight">{item.activity}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Afternoon */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full w-max">
-                    <Coffee className="w-3.5 h-3.5" />
-                    Afternoon
-                  </div>
-                  <div className="space-y-2">
-                    {schedule.afternoon?.map((item: any, i: number) => (
-                      <div key={i} className="p-3.5 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col gap-1">
-                        <span className="text-[10px] font-bold text-slate-400 font-mono flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {item.time}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-700 leading-tight">{item.activity}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Evening */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-full w-max">
-                    <Moon className="w-3.5 h-3.5" />
-                    Evening
-                  </div>
-                  <div className="space-y-2">
-                    {schedule.evening?.map((item: any, i: number) => (
-                      <div key={i} className="p-3.5 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col gap-1">
-                        <span className="text-[10px] font-bold text-slate-400 font-mono flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          {item.time}
-                        </span>
-                        <span className="text-xs font-semibold text-slate-700 leading-tight">{item.activity}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-6">
-                <p className="text-xs text-slate-400">Failed to render timeline schedule.</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Column: Momentum Score, Journey, Coach advice */}
-        <div className="space-y-8">
-          
-          {/* Momentum Score & Badge */}
-          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-8 relative overflow-hidden">
-            <div className="flex justify-between items-start">
-              <div>
-                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Momentum Score</span>
-                <h3 className="text-4xl font-extrabold text-slate-900 mt-1">{momentum?.score || 10}</h3>
-              </div>
-              <div className="flex flex-col items-end gap-1">
-                <span className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-100">
-                  <Flame className="w-4 h-4 fill-amber-500 text-amber-600" />
-                  {momentum?.streak || 0} Day Streak
-                </span>
+                <h3 className="text-base font-extrabold text-white">Emergency Rescue Action Plan</h3>
+                <p className="text-[11px] text-stone-400">Strictly generated based on your next upcoming deadline requirements</p>
               </div>
             </div>
-
-            {/* Score Progress Bar */}
-            <div className="mt-4">
-              <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                <div 
-                  className="bg-emerald-500 h-full rounded-full transition-all duration-500" 
-                  style={{ width: `${momentum?.score || 10}%` }}
-                ></div>
-              </div>
-              <div className="flex justify-between text-[10px] text-slate-400 mt-1.5 font-bold">
-                <span>STARTING</span>
-                <span>MAX (100)</span>
-              </div>
-            </div>
-
-            {/* GROWING BADGE DISPLAY */}
-            <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-              <span className="text-xs text-slate-400 font-semibold">Current Status:</span>
-              <span className="text-xs font-bold px-3 py-1 bg-emerald-50 text-emerald-800 border border-emerald-100 rounded-full flex items-center gap-1">
-                {momentum?.statusLabel === "🌱 Growing" && "🌱"}
-                {momentum?.statusLabel === "🚀 Strong Momentum" && "🚀"}
-                {momentum?.statusLabel === "🔥 Amazing Week" && "🔥"}
-                {momentum?.statusLabel || "🌱 Growing"}
-              </span>
-            </div>
-          </div>
-
-          {/* Weekly Journey contribution style (Feature 8) */}
-          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-8">
-            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Weekly Consistency Graph</h4>
-            
-            <div className="flex justify-between items-center gap-1 pt-1">
-              {momentum?.weeklyJourney && Object.keys(momentum.weeklyJourney).map((dateKey) => {
-                const status = momentum.weeklyJourney[dateKey];
-                const dateObj = new Date(dateKey);
-                const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-
-                return (
-                  <div key={dateKey} className="flex flex-col items-center gap-2 flex-1">
-                    <span className="text-[10px] font-bold text-slate-400 font-sans">{dayName[0]}</span>
-                    <div 
-                      className={`w-full aspect-square max-w-[40px] rounded-xl border transition-all duration-300 relative group cursor-pointer ${
-                        status === 'completed' 
-                          ? 'bg-emerald-500 border-emerald-600 shadow-sm shadow-emerald-500/10' 
-                          : status === 'partial' 
-                          ? 'bg-emerald-200 border-emerald-300' 
-                          : status === 'missed' 
-                          ? 'bg-red-50 border-red-100' 
-                          : 'bg-slate-50 border-slate-200'
-                      }`}
-                      title={`${dateKey}: ${status}`}
-                    >
-                      {/* Simple tooltip */}
-                      <span className="absolute bottom-full left-1/2 -translate-x-1/2 bg-slate-900 text-[9px] font-bold text-white px-2 py-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap mb-1 z-10 pointer-events-none">
-                        {status === 'completed' && "🔥 High Activity"}
-                        {status === 'partial' && "🌱 Active step"}
-                        {status === 'empty' && "Resting"}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            
-            <div className="flex justify-between items-center mt-4 text-[10px] text-slate-400 font-bold">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-50 border border-slate-200 inline-block"></span> Rest</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-200 inline-block"></span> Sprout</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-emerald-500 inline-block"></span> Strong</span>
-            </div>
-          </div>
-
-          {/* Today's Goals Progress summary */}
-          <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm p-8 space-y-4">
-            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Today's Focus</h4>
-            {focusGoal ? (
-              <div className="space-y-3">
-                <div className="flex justify-between items-start">
-                  <span className="text-sm font-bold text-slate-800 leading-tight block truncate max-w-[180px]">{focusGoal.title}</span>
-                  <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">{data?.todayProgress}% Completed</span>
-                </div>
-                {/* Progress bar */}
-                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                  <div 
-                    className="bg-emerald-500 h-full rounded-full transition-all duration-300"
-                    style={{ width: `${data?.todayProgress}%` }}
-                  ></div>
-                </div>
-                <div className="text-[10px] text-slate-400 flex justify-between font-bold">
-                  <span>Created: {new Date(focusGoal.createdAt).toLocaleDateString()}</span>
-                  <span>Target: {new Date(focusGoal.targetDate).toLocaleDateString()}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-4 bg-slate-50 rounded-2xl border border-slate-100">
-                <p className="text-xs text-slate-400 mb-2">No active focus journey</p>
-                <button
-                  onClick={() => onSelectTab("Goals & Journeys")}
-                  className="text-xs text-emerald-600 font-bold hover:text-emerald-700 cursor-pointer"
-                >
-                  Create one now
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* AI Coach Quick Tip */}
-          <div className="bg-gradient-to-br from-[#FAFBF8] to-[#F1F7EC] rounded-[32px] border border-emerald-100 p-8 space-y-3">
-            <div className="flex items-center gap-2 text-emerald-800">
-              <BrainCircuit className="w-5 h-5 text-emerald-600" />
-              <h4 className="text-sm font-bold tracking-tight">AI Coach Tip</h4>
-            </div>
-            <p className="text-xs text-slate-600 leading-relaxed font-medium">
-              {data?.aiSuggestion}
-            </p>
-            <button
-              onClick={() => onSelectTab("AI Coach")}
-              className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 cursor-pointer pt-1"
+            <button 
+              onClick={() => setEmergencySchedule(null)}
+              className="text-stone-400 hover:text-white text-xs font-bold cursor-pointer"
             >
-              Ask Coach Momentum
-              <ArrowRight className="w-3.5 h-3.5" />
+              Hide Rescue Plan
             </button>
           </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            
+            {/* Morning blocks */}
+            <div className="bg-stone-800/40 border border-stone-800 rounded-2xl p-4 space-y-3">
+              <span className="text-[10px] font-extrabold text-amber-400 uppercase tracking-wider">Morning blocks</span>
+              <div className="space-y-2">
+                {emergencySchedule.morning?.map((block: any, idx: number) => (
+                  <div key={idx} className="border-l-2 border-stone-700 pl-3 py-1 text-xs">
+                    <span className="block font-mono text-[10px] text-stone-400">{block.time}</span>
+                    <span className="font-bold text-stone-200">{block.activity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Afternoon blocks */}
+            <div className="bg-stone-800/40 border border-stone-800 rounded-2xl p-4 space-y-3">
+              <span className="text-[10px] font-extrabold text-orange-400 uppercase tracking-wider">Afternoon blocks</span>
+              <div className="space-y-2">
+                {emergencySchedule.afternoon?.map((block: any, idx: number) => (
+                  <div key={idx} className="border-l-2 border-stone-700 pl-3 py-1 text-xs">
+                    <span className="block font-mono text-[10px] text-stone-400">{block.time}</span>
+                    <span className="font-bold text-stone-200">{block.activity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Evening blocks */}
+            <div className="bg-stone-800/40 border border-stone-800 rounded-2xl p-4 space-y-3">
+              <span className="text-[10px] font-extrabold text-red-400 uppercase tracking-wider">Evening blocks</span>
+              <div className="space-y-2">
+                {emergencySchedule.evening?.map((block: any, idx: number) => (
+                  <div key={idx} className="border-l-2 border-stone-700 pl-3 py-1 text-xs">
+                    <span className="block font-mono text-[10px] text-stone-400">{block.time}</span>
+                    <span className="font-bold text-stone-200">{block.activity}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Suggested Skips Section */}
+          <div className="bg-red-950/30 border border-red-900/40 rounded-2xl p-4 space-y-2">
+            <h4 className="text-xs font-extrabold text-red-300 flex items-center gap-1.5">
+              <AlertCircle className="w-4 h-4" />
+              AI SKIPS RECOMMENDATION (Saves Estimated 3.5 Hours)
+            </h4>
+            <p className="text-[11px] text-red-200/80 leading-relaxed">
+              To guarantee meeting your imminent deadlines, we strongly suggest skipping: 
+              <strong> social media browsing, secondary non-urgent emails, complex environment configurations, and formatting details</strong>. Focus strictly on working code/raw deliverable output first!
+            </p>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Nearest Deadline Hero Banner */}
+      {stats.nearestTask ? (
+        <div className="bg-stone-900 text-white rounded-[28px] p-6 sm:p-8 relative overflow-hidden shadow-lg border border-stone-800">
+          <div className="absolute -right-16 -bottom-16 w-64 h-64 bg-red-600/10 rounded-full blur-3xl pointer-events-none"></div>
+          
+          <div className="relative flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div className="space-y-2">
+              <span className="px-2.5 py-0.5 bg-red-500 text-white text-[10px] uppercase tracking-widest font-extrabold rounded-full inline-block animate-pulse">
+                Nearest Deadline Target
+              </span>
+              <h2 className="text-2xl font-extrabold text-white tracking-tight">{stats.nearestTask.title}</h2>
+              <p className="text-xs text-stone-400 font-sans max-w-md">
+                {stats.nearestTask.description || "No supplementary description provided. Every moment counts."}
+              </p>
+              
+              <div className="flex flex-wrap items-center gap-4 pt-2 font-mono text-xs text-stone-300">
+                <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5 text-stone-400" /> {stats.nearestTask.dateScheduled}</span>
+                <span className="flex items-center gap-1"><Clock className="w-3.5 h-3.5 text-stone-400" /> {stats.nearestTask.deadlineTime || "18:00"}</span>
+                <span className="px-2 py-0.5 bg-stone-800 text-stone-300 text-[10px] font-bold rounded-md">Priority: {stats.nearestTask.priority}</span>
+              </div>
+            </div>
+
+            <div className="bg-stone-800/80 border border-stone-700/60 rounded-2xl p-4 text-center shrink-0 w-full md:w-auto min-w-[200px]">
+              <span className="text-[10px] text-stone-400 uppercase tracking-widest block font-bold mb-1">Time Left to Finish</span>
+              <span className="text-2xl font-extrabold text-red-400 tracking-tight block">
+                {timeLeftStr || "Calculating..."}
+              </span>
+              <button
+                onClick={() => onSelectTab("Focus Timer")}
+                className="mt-3 w-full py-1.5 bg-white text-stone-900 hover:bg-stone-100 font-extrabold text-[10px] rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1"
+              >
+                <Zap className="w-3 h-3 text-red-600" />
+                Launch Rescue Focus Timer
+              </button>
+            </div>
+          </div>
         </div>
+      ) : (
+        <div className="bg-stone-50 border border-stone-200 rounded-[28px] p-8 text-center space-y-3">
+          <div className="w-12 h-12 bg-stone-100 rounded-full flex items-center justify-center mx-auto text-stone-400">
+            <Clock className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-stone-800">No active deadlines tracked</h3>
+            <p className="text-xs text-stone-400 max-w-sm mx-auto leading-relaxed mt-1">
+              Set up a goal category or add scheduled tasks with precise dates and times to activate the deadline tracking engines.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Deadline Bento Grid Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        
+        {/* Overdue */}
+        <div className="bg-white border border-stone-100 rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[10px] font-extrabold text-red-600 uppercase tracking-wider block">🔴 Overdue Tasks</span>
+          <span className="text-2xl font-extrabold text-stone-900 block">{stats.overdue.length}</span>
+          <span className="text-[10px] text-stone-400 block font-sans">Requires urgent response</span>
+        </div>
+
+        {/* Due Today */}
+        <div className="bg-white border border-stone-100 rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[10px] font-extrabold text-orange-600 uppercase tracking-wider block">🟠 Due Today</span>
+          <span className="text-2xl font-extrabold text-stone-900 block">{stats.dueToday.length}</span>
+          <span className="text-[10px] text-stone-400 block font-sans">Must complete today</span>
+        </div>
+
+        {/* Due Tomorrow */}
+        <div className="bg-white border border-stone-100 rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[10px] font-extrabold text-amber-600 uppercase tracking-wider block">🟡 Due Tomorrow</span>
+          <span className="text-2xl font-extrabold text-stone-900 block">{stats.dueTomorrow.length}</span>
+          <span className="text-[10px] text-stone-400 block font-sans">On immediate horizon</span>
+        </div>
+
+        {/* Upcoming This Week */}
+        <div className="bg-white border border-stone-100 rounded-2xl p-4 space-y-1 shadow-2xs">
+          <span className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider block">🟢 Upcoming This Week</span>
+          <span className="text-2xl font-extrabold text-stone-900 block">{stats.upcoming.length}</span>
+          <span className="text-[10px] text-stone-400 block font-sans">Scheduled out safely</span>
+        </div>
+
       </div>
 
-      {/* DAILY REFLECTION MODAL (WIZARD) */}
+      {/* Main Content Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        {/* Left column: Add Urgent Task Form */}
+        <div className="bg-white border border-stone-100 rounded-3xl p-6 shadow-sm space-y-5 h-fit">
+          <div>
+            <h3 className="text-sm font-extrabold text-stone-900 uppercase tracking-wider">Quick Task Creator</h3>
+            <p className="text-[11px] text-stone-400">Every task strictly requires a target goal and a hard deadline</p>
+          </div>
+
+          <form onSubmit={handleAddTask} className="space-y-4">
+            
+            {/* Choose Goal Category */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Goal Category</label>
+              <select
+                required
+                value={selectedGoalId}
+                onChange={(e) => setSelectedGoalId(e.target.value === "" ? "" : Number(e.target.value))}
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 focus:outline-none focus:border-red-500"
+              >
+                <option value="">-- Select Goal Category --</option>
+                {allGoals.map((g) => (
+                  <option key={g.id} value={g.id}>{g.title}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Task Title */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Task Name / Title</label>
+              <input
+                type="text"
+                required
+                placeholder="e.g. Finish chemistry assignment"
+                value={taskTitle}
+                onChange={(e) => setTaskTitle(e.target.value)}
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-red-500"
+              />
+            </div>
+
+            {/* Description */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Description</label>
+              <textarea
+                placeholder="Brief summary of required deliverable details..."
+                value={taskDescription}
+                onChange={(e) => setTaskDescription(e.target.value)}
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-red-500 h-16 resize-none"
+              />
+            </div>
+
+            {/* Date Scheduled (Required Deadline Date) */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Deadline Date (Required)</label>
+              <input
+                type="date"
+                required
+                value={taskDeadlineDate}
+                onChange={(e) => setTaskDeadlineDate(e.target.value)}
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 focus:outline-none"
+              />
+            </div>
+
+            {/* Deadline Time */}
+            <div className="space-y-1.5">
+              <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Deadline Time (Required)</label>
+              <input
+                type="time"
+                required
+                value={taskDeadlineTime}
+                onChange={(e) => setTaskDeadlineTime(e.target.value)}
+                className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 focus:outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Estimated Hours */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Est. Hours</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  required
+                  min="0.5"
+                  value={taskEstimatedHours}
+                  onChange={(e) => setTaskEstimatedHours(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 focus:outline-none"
+                />
+              </div>
+
+              {/* Priority */}
+              <div className="space-y-1.5">
+                <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Priority</label>
+                <select
+                  required
+                  value={taskPriority}
+                  onChange={(e) => setTaskPriority(e.target.value)}
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 focus:outline-none"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </div>
+            </div>
+
+            {formError && (
+              <p className="text-[11px] font-semibold text-red-600 bg-red-50 p-2.5 rounded-lg">{formError}</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={addingTask}
+              className="w-full py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold cursor-pointer transition-all disabled:opacity-50 flex items-center justify-center gap-1"
+            >
+              <Plus className="w-4 h-4" />
+              Add Task with Hard Deadline
+            </button>
+          </form>
+        </div>
+
+        {/* Right columns: Simple lists categorised by Deadline Urgent lists */}
+        <div className="lg:col-span-2 space-y-6">
+          
+          {/* Overdue tasks list */}
+          {stats.overdue.length > 0 && (
+            <div className="bg-white border border-red-100 rounded-3xl p-6 shadow-2xs space-y-4">
+              <h3 className="text-xs font-extrabold text-red-700 uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-600 inline-block animate-ping"></span>
+                ⚠️ OVERDUE TASKS ({stats.overdue.length})
+              </h3>
+              
+              <div className="space-y-3">
+                {stats.overdue.map((task: any) => (
+                  <div key={task.id} className="flex items-center justify-between p-4 bg-red-50/50 border border-red-100 rounded-2xl">
+                    <div className="space-y-1">
+                      <span className="text-xs font-extrabold text-stone-900 leading-tight block">{task.title}</span>
+                      <span className="text-[10px] text-red-600 font-semibold block">Missed Deadline: {task.dateScheduled} at {task.deadlineTime || "18:00"}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleTaskStatus(task.id, 'pending')}
+                        className="px-2.5 py-1 bg-white hover:bg-red-100 text-red-700 border border-red-200 text-[10px] font-extrabold rounded-lg cursor-pointer"
+                      >
+                        Complete
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTask(task.id)}
+                        className="p-1 text-stone-400 hover:text-stone-600"
+                      >
+                        <Trash className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Today & Tomorrow List */}
+          <div className="bg-white border border-stone-100 rounded-3xl p-6 shadow-2xs space-y-4">
+            <h3 className="text-xs font-extrabold text-stone-900 uppercase tracking-wider">
+              ⏱️ URGENT DEADLINES (NEXT 48 HOURS)
+            </h3>
+
+            {stats.dueToday.length === 0 && stats.dueTomorrow.length === 0 ? (
+              <p className="text-xs text-stone-400 text-center py-8">No tasks due today or tomorrow. Awesome job keeping up!</p>
+            ) : (
+              <div className="space-y-3">
+                {/* Due Today */}
+                {stats.dueToday.map((task: any) => (
+                  <div key={task.id} className="flex items-center justify-between p-4 bg-orange-50/40 border border-orange-100 rounded-2xl">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span>
+                        <span className="text-xs font-extrabold text-stone-900 leading-tight block">{task.title}</span>
+                      </div>
+                      <span className="text-[10px] text-orange-600 font-bold block ml-3">DUE TODAY at {task.deadlineTime || "18:00"} • Est: {task.estimatedHours}h</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleTaskStatus(task.id, 'pending')}
+                        className="px-2.5 py-1 bg-white hover:bg-orange-100 text-orange-700 border border-orange-200 text-[10px] font-extrabold rounded-lg cursor-pointer"
+                      >
+                        Done
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTask(task.id)}
+                        className="p-1 text-stone-400 hover:text-stone-600"
+                      >
+                        <Trash className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+
+                {/* Due Tomorrow */}
+                {stats.dueTomorrow.map((task: any) => (
+                  <div key={task.id} className="flex items-center justify-between p-4 bg-amber-50/40 border border-amber-100 rounded-2xl">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                        <span className="text-xs font-extrabold text-stone-900 leading-tight block">{task.title}</span>
+                      </div>
+                      <span className="text-[10px] text-amber-700 font-bold block ml-3">Due Tomorrow at {task.deadlineTime || "18:00"} • Est: {task.estimatedHours}h</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleTaskStatus(task.id, 'pending')}
+                        className="px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-700 border border-amber-200 text-[10px] font-extrabold rounded-lg cursor-pointer"
+                      >
+                        Done
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTask(task.id)}
+                        className="p-1 text-stone-400 hover:text-stone-600"
+                      >
+                        <Trash className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Upcoming this Week */}
+          <div className="bg-white border border-stone-100 rounded-3xl p-6 shadow-2xs space-y-4">
+            <h3 className="text-xs font-extrabold text-stone-900 uppercase tracking-wider">
+              🗓️ UPCOMING THIS WEEK
+            </h3>
+
+            {stats.upcoming.length === 0 ? (
+              <p className="text-xs text-stone-400 text-center py-6">No other tasks scheduled for this week.</p>
+            ) : (
+              <div className="space-y-3">
+                {stats.upcoming.map((task: any) => (
+                  <div key={task.id} className="flex items-center justify-between p-4 bg-stone-50 border border-stone-200/50 rounded-2xl">
+                    <div>
+                      <span className="text-xs font-bold text-stone-800 block">{task.title}</span>
+                      <span className="text-[10px] text-stone-500 block">Due on {task.dateScheduled} at {task.deadlineTime || "18:00"}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleToggleTaskStatus(task.id, 'pending')}
+                        className="px-2.5 py-1 bg-white hover:bg-stone-100 text-stone-700 border border-stone-200 text-[10px] font-bold rounded-lg cursor-pointer"
+                      >
+                        Done
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTask(task.id)}
+                        className="p-1 text-stone-400 hover:text-stone-600"
+                      >
+                        <Trash className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* NEW GOAL MODAL WITH FORM FIELD MANDATES */}
       <AnimatePresence>
-        {showReflectionModal && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+        {showGoalModal && (
+          <div className="fixed inset-0 bg-stone-950/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-[32px] border border-slate-100 shadow-2xl w-full max-w-lg overflow-hidden"
+              className="bg-white rounded-3xl border border-stone-100 shadow-2xl w-full max-w-md overflow-hidden font-sans"
             >
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50">
-                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                  <Compass className="w-5 h-5 text-emerald-500" />
-                  Daily Reflection
+              <div className="p-6 border-b border-stone-100 flex justify-between items-center bg-stone-50">
+                <h3 className="text-xs font-extrabold text-stone-900 uppercase tracking-wider flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-red-500" />
+                  New Goal Category
                 </h3>
                 <button 
-                  onClick={closeReflectionModal} 
-                  className="text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                  onClick={() => setShowGoalModal(false)} 
+                  className="text-stone-400 hover:text-stone-600 font-bold text-xs cursor-pointer"
                 >
                   Close
                 </button>
               </div>
 
-              <div className="p-6">
-                {!savedAdvice ? (
-                  <form onSubmit={handleSaveReflection} className="space-y-5">
-                    <p className="text-xs text-slate-400">
-                      Reflecting on your day helps clear your mind and prepares your brain for gentle productivity tomorrow.
-                    </p>
+              <form onSubmit={handleCreateGoal} className="p-6 space-y-4">
+                
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Goal Title</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Hackathon Pitch deck"
+                    value={goalTitle}
+                    onChange={(e) => setGoalTitle(e.target.value)}
+                    className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-red-500"
+                  />
+                </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                        What went well today?
-                      </label>
-                      <textarea
-                        required
-                        value={wentWell}
-                        onChange={(e) => setWentWell(e.target.value)}
-                        placeholder="e.g., I finally sat down and worked for 20 minutes, or I felt focused after lunch."
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 h-20 transition-all resize-none font-medium"
-                      />
-                    </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Description</label>
+                  <textarea
+                    placeholder="Describe what high level accomplishments must happen to call this category successful..."
+                    value={goalDescription}
+                    onChange={(e) => setGoalDescription(e.target.value)}
+                    className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-red-500 h-20 resize-none"
+                  />
+                </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                        What slowed you down?
-                      </label>
-                      <textarea
-                        required
-                        value={slowedDown}
-                        onChange={(e) => setSlowedDown(e.target.value)}
-                        placeholder="e.g., I got distracted checking my phone, or I felt overwhelmed by the big tasks."
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/10 focus:border-emerald-500 h-20 transition-all resize-none font-medium"
-                      />
-                    </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Goal Deadline Date (Required)</label>
+                  <input
+                    type="date"
+                    required
+                    value={goalTargetDate}
+                    onChange={(e) => setGoalTargetDate(e.target.value)}
+                    className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 focus:outline-none focus:border-red-500"
+                  />
+                </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                        How did you feel today?
-                      </label>
-                      <div className="grid grid-cols-5 gap-2">
-                        {[
-                          { name: "happy", label: "Happy", emoji: "😊" },
-                          { name: "focused", label: "Focused", emoji: "🧠" },
-                          { name: "neutral", label: "Neutral", emoji: "😐" },
-                          { name: "tired", label: "Tired", emoji: "🥱" },
-                          { name: "anxious", label: "Anxious", emoji: "Anx" }
-                        ].map((item) => (
-                          <button
-                            key={item.name}
-                            type="button"
-                            onClick={() => setFeeling(item.name)}
-                            className={`py-2 border rounded-xl text-center flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${
-                              feeling === item.name 
-                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800 shadow-sm' 
-                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            <span className="text-lg font-sans">
-                              {item.name === "anxious" ? "🥺" : item.emoji}
-                            </span>
-                            <span className="text-[10px] font-bold">{item.label}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                <div className="space-y-1.5">
+                  <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Deadline Time (Required)</label>
+                  <input
+                    type="time"
+                    required
+                    value={goalDeadlineTime}
+                    onChange={(e) => setGoalDeadlineTime(e.target.value)}
+                    className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 focus:outline-none focus:border-red-500"
+                  />
+                </div>
 
-                    <div className="pt-4 font-sans">
-                      <button
-                        type="submit"
-                        disabled={savingReflection}
-                        className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer shadow-sm flex items-center justify-center gap-2"
-                      >
-                        {savingReflection ? (
-                          <span className="flex items-center gap-2">
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            Analyzing your reflection...
-                          </span>
-                        ) : (
-                          "Save & Receive Coach Advice"
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                ) : (
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="space-y-6 py-4"
-                  >
-                    <div className="text-center space-y-2">
-                      <span className="text-4xl">{getFeelingEmoji(feeling)}</span>
-                      <h4 className="text-base font-bold text-slate-800">Reflection Logged!</h4>
-                      <p className="text-xs text-slate-400">Here is tomorrow's gentle coaching advice based on your check-in:</p>
-                    </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Est. Total Hours</label>
+                    <input
+                      type="number"
+                      required
+                      value={goalEstimatedHours}
+                      onChange={(e) => setGoalEstimatedHours(e.target.value)}
+                      className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 focus:outline-none focus:border-red-500"
+                    />
+                  </div>
 
-                    <div className="bg-[#F8FAF7] border border-emerald-100 rounded-[24px] p-5 relative overflow-hidden">
-                      <div className="absolute top-0 right-0 p-3 text-emerald-600">
-                        <Sparkles className="w-5 h-5 opacity-30" />
-                      </div>
-                      <p className="text-xs text-slate-700 leading-relaxed font-sans italic font-semibold">
-                        "{savedAdvice}"
-                      </p>
-                    </div>
-
-                    <div className="bg-emerald-50/50 border border-emerald-100/30 rounded-2xl p-3 flex gap-2">
-                      <Heart className="w-4.5 h-4.5 text-emerald-600 shrink-0 mt-0.5" />
-                      <p className="text-[11px] text-slate-500 leading-relaxed font-medium">
-                        Excellent work! Logging daily reflections maintains your streak and increases your momentum score by <strong>+15 points</strong>.
-                      </p>
-                    </div>
-
-                    <button
-                      onClick={closeReflectionModal}
-                      className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold cursor-pointer"
+                  <div className="space-y-1.5">
+                    <label className="block text-[10px] font-extrabold text-stone-500 uppercase tracking-wider">Priority</label>
+                    <select
+                      value={goalPriority}
+                      onChange={(e) => setGoalPriority(e.target.value)}
+                      className="w-full bg-stone-50 border border-stone-200 rounded-xl p-2.5 text-xs text-stone-800 focus:outline-none focus:border-red-500"
                     >
-                      Awesome, Thank You
-                    </button>
-                  </motion.div>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  </div>
+                </div>
+
+                {formError && (
+                  <p className="text-[11px] font-semibold text-red-600 bg-red-50 p-2 rounded-lg">{formError}</p>
                 )}
-              </div>
+
+                <button
+                  type="submit"
+                  disabled={creatingGoal}
+                  className="w-full py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                >
+                  {creatingGoal ? "Creating..." : "Save Goal & Track Deadlines"}
+                </button>
+              </form>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
     </div>
   );
 }

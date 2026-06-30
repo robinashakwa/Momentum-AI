@@ -17,6 +17,7 @@ const db = new Database(dbPath);
 
 // Enable WAL mode for performance
 db.pragma("journal_mode = WAL");
+db.pragma("foreign_keys = ON");
 
 /**
  * Initialize Database Tables
@@ -50,9 +51,13 @@ export function initDb() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
       title TEXT NOT NULL,
-      target_date TEXT NOT NULL,
+      target_date TEXT NOT NULL, -- functions as deadline_date
       status TEXT DEFAULT 'active', -- 'active', 'completed', 'abandoned'
       plant_stage INTEGER DEFAULT 0, -- 0: Seed, 1: Sprout, 2: Sapling, 3: Flowering, 4: Tree
+      description TEXT DEFAULT '',
+      deadline_time TEXT DEFAULT '18:00',
+      estimated_hours REAL DEFAULT 0.0,
+      priority TEXT DEFAULT 'medium',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
@@ -82,8 +87,13 @@ export function initDb() {
       user_id INTEGER NOT NULL,
       title TEXT NOT NULL,
       status TEXT DEFAULT 'pending', -- 'pending', 'completed'
-      date_scheduled TEXT NOT NULL, -- YYYY-MM-DD
+      date_scheduled TEXT NOT NULL, -- functions as deadline_date
       order_index INTEGER DEFAULT 0,
+      description TEXT DEFAULT '',
+      deadline_time TEXT DEFAULT '18:00',
+      estimated_hours REAL DEFAULT 0.0,
+      priority TEXT DEFAULT 'medium',
+      completed_at TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (milestone_id) REFERENCES milestones(id) ON DELETE CASCADE,
       FOREIGN KEY (goal_id) REFERENCES goals(id) ON DELETE CASCADE,
@@ -176,6 +186,26 @@ export function initDb() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+  // Safe migration of columns for existing databases
+  const migrations = [
+    "ALTER TABLE goals ADD COLUMN description TEXT DEFAULT ''",
+    "ALTER TABLE goals ADD COLUMN deadline_time TEXT DEFAULT '18:00'",
+    "ALTER TABLE goals ADD COLUMN estimated_hours REAL DEFAULT 0.0",
+    "ALTER TABLE goals ADD COLUMN priority TEXT DEFAULT 'medium'",
+    "ALTER TABLE tasks ADD COLUMN description TEXT DEFAULT ''",
+    "ALTER TABLE tasks ADD COLUMN deadline_time TEXT DEFAULT '18:00'",
+    "ALTER TABLE tasks ADD COLUMN estimated_hours REAL DEFAULT 0.0",
+    "ALTER TABLE tasks ADD COLUMN priority TEXT DEFAULT 'medium'",
+    "ALTER TABLE tasks ADD COLUMN completed_at TEXT"
+  ];
+  for (const m of migrations) {
+    try {
+      db.exec(m);
+    } catch (e) {
+      // Column already exists
+    }
+  }
 }
 
 /**
@@ -297,42 +327,49 @@ export function updateSettings(userId: number, theme: string, workingHours: stri
 /**
  * Goal & Milestone & Task & MiniTask CRUD
  */
-export function createGoal(userId: number, title: string, targetDate: string, milestones: { title: string, tasks: { title: string, miniTasks: string[] }[] }[]): number {
+export function createGoal(
+  userId: number, 
+  title: string, 
+  targetDate: string, 
+  milestones: { title: string, tasks: { title: string, miniTasks: string[] }[] }[] = [],
+  description: string = '',
+  deadlineTime: string = '18:00',
+  estimatedHours: number = 0,
+  priority: string = 'medium'
+): number {
   const goalStmt = db.prepare(`
-    INSERT INTO goals (user_id, title, target_date, status, plant_stage) 
-    VALUES (?, ?, ?, 'active', 0)
+    INSERT INTO goals (user_id, title, target_date, status, plant_stage, description, deadline_time, estimated_hours, priority) 
+    VALUES (?, ?, ?, 'active', 0, ?, ?, ?, ?)
   `);
-  const goalResult = goalStmt.run(userId, title, targetDate);
+  const goalResult = goalStmt.run(userId, title, targetDate, description, deadlineTime, estimatedHours, priority);
   const goalId = goalResult.lastInsertRowid as number;
 
-  // Bulk insert milestones, tasks, minitasks
-  let mIndex = 0;
-  for (const milestone of milestones) {
-    const milestoneStmt = db.prepare(`
-      INSERT INTO milestones (goal_id, user_id, title, status, order_index)
-      VALUES (?, ?, ?, 'pending', ?)
-    `);
-    const milestoneResult = milestoneStmt.run(goalId, userId, milestone.title, mIndex++);
-    const milestoneId = milestoneResult.lastInsertRowid as number;
+  // Create a default milestone 'Tasks'
+  const defMilestoneStmt = db.prepare(`
+    INSERT INTO milestones (goal_id, user_id, title, status, order_index)
+    VALUES (?, ?, 'Tasks', 'pending', 0)
+  `);
+  defMilestoneStmt.run(goalId, userId);
 
-    let tIndex = 0;
-    for (const task of milestone.tasks) {
-      // For simplicity, evenly schedule tasks leading up to the target date or default to today/tomorrow
-      const dateScheduled = targetDate; // Can be fine-tuned or standard
-      const taskStmt = db.prepare(`
-        INSERT INTO tasks (milestone_id, goal_id, user_id, title, status, date_scheduled, order_index)
-        VALUES (?, ?, ?, ?, 'pending', ?, ?)
+  // Bulk insert milestones, tasks, minitasks if provided
+  if (milestones && milestones.length > 0) {
+    let mIndex = 1;
+    for (const milestone of milestones) {
+      const milestoneStmt = db.prepare(`
+        INSERT INTO milestones (goal_id, user_id, title, status, order_index)
+        VALUES (?, ?, ?, 'pending', ?)
       `);
-      const taskResult = taskStmt.run(milestoneId, goalId, userId, task.title, dateScheduled, tIndex++);
-      const taskId = taskResult.lastInsertRowid as number;
+      const milestoneResult = milestoneStmt.run(goalId, userId, milestone.title, mIndex++);
+      const milestoneId = milestoneResult.lastInsertRowid as number;
 
-      let mtIndex = 0;
-      for (const miniTitle of task.miniTasks) {
-        const mtStmt = db.prepare(`
-          INSERT INTO mini_tasks (task_id, goal_id, user_id, title, status, order_index)
-          VALUES (?, ?, ?, ?, 'pending', ?)
+      let tIndex = 0;
+      for (const task of milestone.tasks) {
+        const dateScheduled = targetDate;
+        const taskStmt = db.prepare(`
+          INSERT INTO tasks (milestone_id, goal_id, user_id, title, status, date_scheduled, order_index, description, deadline_time, estimated_hours, priority)
+          VALUES (?, ?, ?, ?, 'pending', ?, ?, '', ?, 1.0, ?)
         `);
-        mtStmt.run(taskId, goalId, userId, miniTitle, mtIndex++);
+        taskStmt.run(milestoneId, goalId, userId, task.title, dateScheduled, tIndex++, deadlineTime, priority);
       }
     }
   }
@@ -349,6 +386,42 @@ export function createGoal(userId: number, title: string, targetDate: string, mi
   return goalId;
 }
 
+export function addTaskManually(
+  userId: number, 
+  goalId: number, 
+  title: string,
+  description: string = '',
+  deadlineDate: string = '',
+  deadlineTime: string = '18:00',
+  estimatedHours: number = 1.0,
+  priority: string = 'medium'
+): number {
+  // 1. Get or create default milestone 'Tasks'
+  let milestoneStmt = db.prepare("SELECT id FROM milestones WHERE goal_id = ? AND title = 'Tasks' LIMIT 1");
+  let milestone = milestoneStmt.get(goalId) as { id: number } | undefined;
+  let milestoneId: number;
+
+  if (!milestone) {
+    const insertMilestone = db.prepare(`
+      INSERT INTO milestones (goal_id, user_id, title, status, order_index)
+      VALUES (?, ?, 'Tasks', 'pending', 0)
+    `);
+    const mRes = insertMilestone.run(goalId, userId);
+    milestoneId = mRes.lastInsertRowid as number;
+  } else {
+    milestoneId = milestone.id;
+  }
+
+  // 2. Insert Task under this milestone
+  const finalDeadlineDate = deadlineDate || new Date().toISOString().split('T')[0];
+  const insertTask = db.prepare(`
+    INSERT INTO tasks (milestone_id, goal_id, user_id, title, status, date_scheduled, order_index, description, deadline_time, estimated_hours, priority)
+    VALUES (?, ?, ?, ?, 'pending', ?, 0, ?, ?, ?, ?)
+  `);
+  const tRes = insertTask.run(milestoneId, goalId, userId, title, finalDeadlineDate, description, deadlineTime, estimatedHours, priority);
+  return tRes.lastInsertRowid as number;
+}
+
 export function getGoals(userId: number): Goal[] {
   const stmt = db.prepare("SELECT * FROM goals WHERE user_id = ? ORDER BY created_at DESC");
   const rows = stmt.all(userId) as any[];
@@ -359,8 +432,12 @@ export function getGoals(userId: number): Goal[] {
     targetDate: r.target_date,
     status: r.status,
     createdAt: r.created_at,
-    plantStage: r.plant_stage
-  }));
+    plantStage: r.plant_stage,
+    description: r.description || '',
+    deadlineTime: r.deadline_time || '18:00',
+    estimatedHours: r.estimated_hours || 0,
+    priority: r.priority || 'medium'
+  } as any));
 }
 
 export function getGoalDetails(goalId: number, userId: number) {
@@ -388,6 +465,11 @@ export function getGoalDetails(goalId: number, userId: number) {
         dateScheduled: t.date_scheduled,
         orderIndex: t.order_index,
         createdAt: t.created_at,
+        description: t.description || '',
+        deadlineTime: t.deadline_time || '18:00',
+        estimatedHours: t.estimated_hours || 0,
+        priority: t.priority || 'medium',
+        completedAt: t.completed_at || null,
         miniTasks: miniTasks.map(mt => ({
           id: mt.id,
           taskId: mt.task_id,
@@ -421,6 +503,10 @@ export function getGoalDetails(goalId: number, userId: number) {
     status: goal.status,
     createdAt: goal.created_at,
     plantStage: goal.plant_stage,
+    description: goal.description || '',
+    deadlineTime: goal.deadline_time || '18:00',
+    estimatedHours: goal.estimated_hours || 0,
+    priority: goal.priority || 'medium',
     milestones: detailedMilestones
   };
 }
@@ -445,8 +531,9 @@ export function updateMiniTaskStatus(miniTaskId: number, userId: number, status:
 }
 
 export function updateTaskStatus(taskId: number, userId: number, status: 'pending' | 'completed') {
-  const stmt = db.prepare("UPDATE tasks SET status = ? WHERE id = ? AND user_id = ?");
-  stmt.run(status, taskId, userId);
+  const completedAt = status === 'completed' ? new Date().toISOString() : null;
+  const stmt = db.prepare("UPDATE tasks SET status = ?, completed_at = ? WHERE id = ? AND user_id = ?");
+  stmt.run(status, completedAt, taskId, userId);
 
   // Retrieve details of the task
   const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId) as any;
@@ -461,17 +548,36 @@ export function updateTaskStatus(taskId: number, userId: number, status: 'pendin
     db.prepare("UPDATE milestones SET status = ? WHERE id = ?")
       .run(milestoneCompleted && allTasks.length > 0 ? 'completed' : 'pending', milestoneId);
 
-    // Update goal's plant stage
-    // Plant stages: 0 (Seed) to 4 (Mighty Tree) based on percentage of tasks completed
+    // Update goal's plant stage based on weighted completion rate
+    // Complete on-time = 1.0 points, Complete late = 0.5 points, Missed/Overdue = 0 points
     const totalGoalTasks = db.prepare("SELECT * FROM tasks WHERE goal_id = ?").all(goalId) as any[];
-    const completedGoalTasks = totalGoalTasks.filter(t => t.status === 'completed');
-    const completionRate = totalGoalTasks.length > 0 ? (completedGoalTasks.length / totalGoalTasks.length) : 0;
+    let totalScore = 0;
     
+    totalGoalTasks.forEach(t => {
+      if (t.status === 'completed') {
+        const deadlineStr = `${t.date_scheduled}T${t.deadline_time || '18:00'}:00`;
+        const deadlineTimeMs = new Date(deadlineStr).getTime();
+        const completedTimeMs = t.completed_at ? new Date(t.completed_at).getTime() : Date.now();
+        
+        if (completedTimeMs <= deadlineTimeMs) {
+          totalScore += 1.0; // On-time
+        } else {
+          totalScore += 0.5; // Late
+        }
+      } else {
+        // Still pending or overdue
+        totalScore += 0;
+      }
+    });
+
+    const growthRate = totalGoalTasks.length > 0 ? (totalScore / totalGoalTasks.length) : 0;
+    const completionRate = totalGoalTasks.length > 0 ? (totalGoalTasks.filter(t => t.status === 'completed').length / totalGoalTasks.length) : 0;
+
     let newStage = 0;
-    if (completionRate >= 1.0) newStage = 4; // Mighty Tree
-    else if (completionRate >= 0.75) newStage = 3; // Flowering Plant
-    else if (completionRate >= 0.5) newStage = 2; // Sapling
-    else if (completionRate >= 0.25) newStage = 1; // Sprout
+    if (growthRate >= 0.95 && completionRate >= 1.0) newStage = 4; // Mighty Tree (only if all tasks completed and almost all on time)
+    else if (growthRate >= 0.7) newStage = 3; // Flowering Plant
+    else if (growthRate >= 0.4) newStage = 2; // Sapling
+    else if (growthRate >= 0.1) newStage = 1; // Sprout
 
     db.prepare("UPDATE goals SET plant_stage = ?, status = ? WHERE id = ?")
       .run(newStage, completionRate >= 1.0 ? 'completed' : 'active', goalId);
@@ -504,8 +610,71 @@ export function getNextAction(userId: number): Task | null {
     status: row.status,
     dateScheduled: row.date_scheduled,
     orderIndex: row.order_index,
-    createdAt: row.created_at
-  };
+    createdAt: row.created_at,
+    description: row.description || '',
+    deadlineTime: row.deadline_time || '18:00',
+    estimatedHours: row.estimated_hours || 0,
+    priority: row.priority || 'medium',
+    completedAt: row.completed_at || null
+  } as any;
+}
+
+export function getPendingTasks(userId: number): Task[] {
+  const stmt = db.prepare(`
+    SELECT tasks.* FROM tasks
+    JOIN goals ON tasks.goal_id = goals.id
+    WHERE tasks.user_id = ? AND tasks.status = 'pending' AND goals.status = 'active'
+    ORDER BY tasks.date_scheduled ASC, tasks.deadline_time ASC
+  `);
+  const rows = stmt.all(userId) as any[];
+  return rows.map(row => ({
+    id: row.id,
+    milestoneId: row.milestone_id,
+    goalId: row.goal_id,
+    userId: row.user_id,
+    title: row.title,
+    status: row.status,
+    dateScheduled: row.date_scheduled,
+    orderIndex: row.order_index,
+    createdAt: row.created_at,
+    description: row.description || '',
+    deadlineTime: row.deadline_time || '18:00',
+    estimatedHours: row.estimated_hours || 0,
+    priority: row.priority || 'medium',
+    completedAt: row.completed_at || null
+  } as any));
+}
+
+export function deleteGoal(goalId: number, userId: number) {
+  try {
+    const deleteTx = db.transaction(() => {
+      db.prepare("DELETE FROM achievements WHERE goal_id = ?").run(goalId);
+      db.prepare("DELETE FROM focus_sessions WHERE task_id IN (SELECT id FROM tasks WHERE goal_id = ?)").run(goalId);
+      db.prepare("DELETE FROM mini_tasks WHERE goal_id = ?").run(goalId);
+      db.prepare("DELETE FROM tasks WHERE goal_id = ?").run(goalId);
+      db.prepare("DELETE FROM milestones WHERE goal_id = ?").run(goalId);
+      db.prepare("DELETE FROM goals WHERE id = ? AND user_id = ?").run(goalId, userId);
+    });
+    deleteTx();
+  } catch (error) {
+    console.error("Error during deleteGoal transaction:", error);
+    try {
+      db.prepare("DELETE FROM goals WHERE id = ? AND user_id = ?").run(goalId, userId);
+    } catch (fallbackError) {
+      console.error("Error during fallback deleteGoal:", fallbackError);
+      throw fallbackError;
+    }
+  }
+}
+
+export function updateGoalStatus(goalId: number, userId: number, status: string) {
+  const stmt = db.prepare("UPDATE goals SET status = ? WHERE id = ? AND user_id = ?");
+  stmt.run(status, goalId, userId);
+}
+
+export function deleteTask(taskId: number, userId: number) {
+  const stmt = db.prepare("DELETE FROM tasks WHERE id = ? AND user_id = ?");
+  stmt.run(taskId, userId);
 }
 
 /**

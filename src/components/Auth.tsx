@@ -5,13 +5,14 @@
 
 import React, { useState } from "react";
 import { motion } from "motion/react";
-import { Sparkles, ArrowRight, User as UserIcon, Lock, CheckCircle2 } from "lucide-react";
+import { Sparkles, ArrowRight, User as UserIcon, Lock, CheckCircle2, ArrowLeft } from "lucide-react";
 
 interface AuthProps {
   onLoginSuccess: (token: string, user: { id: number; username: string }) => void;
+  onBackToLanding?: () => void;
 }
 
-export default function Auth({ onLoginSuccess }: AuthProps) {
+export default function Auth({ onLoginSuccess, onBackToLanding }: AuthProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -52,7 +53,16 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#FBFBFB] flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans">
+    <div className="min-h-screen bg-[#FBFBFB] flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans relative">
+      {onBackToLanding && (
+        <button
+          onClick={onBackToLanding}
+          className="absolute top-6 left-6 flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-slate-900 transition-colors cursor-pointer bg-white border border-slate-100 rounded-full px-4 py-2 shadow-xs"
+        >
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Back to Home</span>
+        </button>
+      )}
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center items-center gap-2 mb-2">
           <div className="w-10 h-10 rounded-xl bg-emerald-500 flex items-center justify-center shadow-sm shadow-emerald-500/20">
