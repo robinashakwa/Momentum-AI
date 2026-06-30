@@ -1,0 +1,6 @@
+{
+  "name": "Momentum AI",
+  "description": "An intelligent AI productivity coach that transforms overwhelming goals into small, manageable daily actions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
