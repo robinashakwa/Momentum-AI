@@ -1,122 +1,261 @@
-# Momentum AI 🌱
+<div align="center">
 
-> **The Last-Minute Life Saver** — An intelligent AI productivity coach that stops procrastination by transforming overwhelming goals into tiny, achievable daily actions.
+# ⚡ Momentum AI
 
-Momentum AI is designed for the Google Developer Hackathon. Unlike traditional deadline managers or to-do list applications that cause anxiety, Momentum AI reduces decision fatigue. Instead of asking: *"Will I miss my deadline?"*, Momentum AI asks: **"What's the smallest next step I can take today?"**
+### Build Better Habits. Finish More Tasks. Never Lose Momentum.
+
+[![React](https://img.shields.io/badge/React-18-61DAFB?style=for-the-badge&logo=react&logoColor=white)](https://react.dev/)
+[![Node.js](https://img.shields.io/badge/Node.js-Backend-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
+[![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?style=for-the-badge&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
+[![Gemini](https://img.shields.io/badge/Google%20Gemini-AI-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev/)
+[![Cloud Run](https://img.shields.io/badge/Google%20Cloud%20Run-Deployed-4285F4?style=for-the-badge&logo=googlecloud&logoColor=white)](https://cloud.google.com/run)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=for-the-badge)](#-license)
+
+🏆 **Built for VIBE2SHIP — India's Biggest Vibe Coding Hackathon**
+*Presented by Coding Ninjas × Google for Developers*
+**Theme:** The Last-Minute Life Saver
+
+**[🚀 Live Demo](https://momentum-ai-642865164918.asia-southeast1.run.app/)** &nbsp;·&nbsp; **[📂 Repository](https://github.com/robinashakwa/Momentum-AI)**
+
+</div>
 
 ---
 
-## 🎨 Design Philosophy & Vibe
+## 🧭 Project Overview
 
-- **Apple Reminders & Notion Inspired**: Generous negative space, soft rounded borders, crisp typography, and high-contrast light slate theme.
-- **Micro-Action Decompositions**: No massive, stressful tables. A simple spotlight card focusing on exactly **one** step.
-- **Achievement Garden**: A digital plant collection that grows as you complete milestones, making productivity warm and gamified.
-- **Zero Tech-Larping**: Humble, human language. Beautiful, calming illustrations and friendly feedback.
+Students, professionals, freelancers, and entrepreneurs constantly juggle multiple deadlines across different aspects of their lives — coursework, client deliverables, personal projects, and everyday responsibilities.
+
+Traditional task management applications only go as far as reminders. They tell users what is due, but offer no real guidance on what to prioritize, how to plan their time, or how to stay on track when work piles up.
+
+This gap often results in last-minute stress, rushed output, and missed deadlines — even when users genuinely intend to stay organized.
+
+**Momentum AI** was built to solve this problem at its root. Rather than passively reminding users of deadlines, it actively analyzes their workload and provides intelligent recommendations on what to do next — turning planning from a chore into a guided, achievable process.
 
 ---
 
-## 🏗️ Technical Architecture
+## 💡 Solution
 
-Momentum AI is built with a highly cohesive, full-stack architecture running inside sandboxed containers:
+Momentum AI is an **intelligent productivity coach** powered by Google's Gemini AI.
+
+Instead of simply tracking due dates, Momentum AI:
+
+- 📊 **Analyzes workload** across all active tasks and commitments
+- 🔮 **Predicts urgent work** before it becomes a last-minute emergency
+- 🗓️ **Creates personalized daily plans** based on real deadlines and effort
+- 🧱 **Breaks large work into manageable tasks** that are easy to start
+- 🎯 **Suggests focus sessions** to encourage deep, uninterrupted work
+- 📈 **Tracks productivity** to help users build sustainable habits
+
+---
+
+## ✨ Features
+
+| Feature | Description |
+|---|---|
+| 🧠 **AI Task Prioritization** | Ranks tasks intelligently based on urgency, deadline, and effort using Gemini AI. |
+| 📅 **Smart Daily Planner** | Generates a realistic, achievable daily plan tailored to current workload. |
+| ⚡ **Momentum Builder** | Encourages consistent daily progress through small, achievable wins. |
+| 🔥 **Momentum Score** | A dynamic score that reflects consistency and ongoing productivity. |
+| 📝 **AI Task Breakdown** | Splits complex, overwhelming tasks into clear, actionable sub-tasks. |
+| 🤖 **AI Productivity Assistant** | A conversational AI coach to help plan, clarify, and stay accountable. |
+| 📊 **Dashboard** | A visual snapshot of pending work, priorities, and overall progress. |
+| 📆 **Calendar** | A unified view of deadlines, daily plans, and scheduled focus sessions. |
+| 🎯 **Focus Mode** | A distraction-free environment designed for deep, single-task focus. |
+| 📈 **Progress Reports** | Detailed insights into productivity trends and completion rates. |
+| ⚙️ **User Settings** | Personalize planning preferences, notifications, and workflow style. |
+| 🔐 **Secure Login System** | Reliable authentication to keep user data safe and private. |
+
+---
+
+## 🛠️ Tech Stack
+
+**Frontend**
+- React
+- Vite
+- Tailwind CSS
+- React Router
+- Framer Motion
+
+**Backend**
+- Node.js
+- Express.js
+
+**Database**
+- SQLite
+
+**Artificial Intelligence**
+- Google Gemini API
+
+**Charts**
+- Recharts
+
+**Deployment**
+- Google Cloud Run
+
+---
+
+## ☁️ Google Technologies Used
+
+| Technology | Usage |
+|---|---|
+| **Google AI Studio** | Used to design, test, and refine the prompts that power Momentum AI's planning intelligence. |
+| **Gemini API** | Drives task prioritization, daily plan generation, task breakdown, and the AI assistant's responses. |
+| **Google Cloud Run** | Hosts and serves the application with scalable, serverless deployment infrastructure. |
+
+---
+
+## 🏗️ Architecture
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                        CLIENT                          │
-│  React 19 (Vite) + Tailwind CSS v4 + Framer Motion     │
-└───────────┬────────────────────────────────┬───────────┘
-            │ Auth / Goals                   │ Chats / Schedule
-            ▼                                ▼
-┌────────────────────────────────────────────────────────┐
-│                        SERVER                          │
-│  Node.js + Express + SQLite Database (better-sqlite3)  │
-└───────────────────────────┬────────────────────────────┘
-                            │ Structured Prompt Schemas
-                            ▼
-┌────────────────────────────────────────────────────────┐
-│                       GOOGLE AI                        │
-│  Gemini 3.5 Flash Model (via @google/genai SDK)       │
-└────────────────────────────────────────────────────────┘
+                   User
+                     │
+                     ▼
+             React Frontend
+                     │
+                     ▼
+            Express Backend
+               │         │
+               ▼         ▼
+        SQLite Database  Gemini API
 ```
 
-1. **Frontend**: React SPA utilizing modular components, custom timers, and Tailwind v4 theme bindings.
-2. **Backend**: Custom Express.js server providing routing, custom PBKDF2 user authentication, and SQLite persistence.
-3. **Database**: Robust local SQLite file storage (`momentum_ai.db`) executing inside the container.
-4. **AI integration**: Seamless server-side calls utilizing the official `@google/genai` TypeScript SDK. Keeps credentials isolated and secure.
+Gemini continuously analyzes user tasks and generates intelligent productivity recommendations, which flow back through the Express backend to the React frontend in real time.
 
 ---
 
-## 🌟 10 Core Features
+## 📁 Project Structure
 
-1. **Home Dashboard**: Visually stunning dashboard showing your single progress spotlight, momentum stats, and daily motivation.
-2. **Goal Journey**: Create a single focus goal. The AI automatically parses, designs, and seeds its roadmap.
-3. **AI Goal Breakdown**: Automatic decomposition of high-level goals into sequential **Milestones** ➔ **Tasks** ➔ **Mini-Tasks**.
-4. **Momentum Score**: Dynamic scoreboard based on consistency, streaks, and reflections. Status badges: `🌱 Growing`, `🚀 Strong Momentum`, or `🔥 Amazing Week`.
-5. **Daily Reflection**: Calm end-of-day mindfulness check-in. Gemini generates customized advice for tomorrow.
-6. **Smart Schedule**: Multi-block daily timeline (Morning, Afternoon, Evening) that integrates your tasks, breaks, meals, and relaxation.
-7. **Focus Mode**: A dedicated 25-minute Pomodoro timer displaying active focus points and warm progress micro-quotes.
-8. **Weekly Journey**: Elegant 7-day row representation of your daily consistency, inspired by GitHub contribution graphs.
-9. **AI Coach**: Interactive conversational panel renamed "AI Coach" with quick suggestion chips for motivational advice.
-10. **Achievement Garden**: A visual garden representing completed goals. Cultivate virtual plants like **Sprouty**, **Ivy**, **Oak**, or **Blossom**.
+```
+Momentum-AI/
+├── client/                 # React frontend
+│   ├── src/
+│   │   ├── components/
+│   │   ├── pages/
+│   │   ├── hooks/
+│   │   ├── context/
+│   │   └── App.jsx
+│   └── package.json
+├── server/                 # Node.js + Express backend
+│   ├── routes/
+│   ├── controllers/
+│   ├── models/
+│   ├── db/
+│   └── index.js
+├── .env.example
+├── package.json
+└── README.md
+```
 
 ---
 
-## 📦 Local Installation
+## ⚙️ Installation
 
-To boot Momentum AI locally:
-
-### 1. Prerequisite
-Ensure you have Node.js 20+ installed.
-
-### 2. Configure Credentials
-Create a `.env` file in the root folder:
-```env
-GEMINI_API_KEY="YOUR_GOOGLE_AI_STUDIO_API_KEY"
-PORT=3000
-```
-
-### 3. Install and Launch
+**1. Clone the repository**
 ```bash
-# Install packages
-npm install
+git clone https://github.com/robinashakwa/Momentum-AI.git
+```
 
-# Run the full-stack development workspace
+**2. Navigate to the project**
+```bash
+cd Momentum-AI
+```
+
+**3. Install dependencies**
+```bash
+npm install
+```
+
+**4. Start the development server**
+```bash
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) to view the application.
 
 ---
 
-## 🚀 Container Deployment (Google Cloud Run)
+## 🔑 Environment Variables
 
-Momentum AI is designed to compile into a lightweight container and deploy to Google Cloud Run:
+Create a `.env` file in the root directory:
 
-```bash
-# Build the container locally
-gcloud builds submit --tag gcr.io/[PROJECT-ID]/momentum-ai
-
-# Deploy to Cloud Run with port mapping
-gcloud run deploy momentum-ai \
-  --image gcr.io/[PROJECT-ID]/momentum-ai \
-  --platform managed \
-  --port 3000 \
-  --set-env-vars="GEMINI_API_KEY=YOUR_API_KEY"
+```env
+GEMINI_API_KEY=
+DATABASE_URL=
 ```
 
 ---
 
-## 🔮 Future Roadmap
+## 📸 Screenshots
 
-- [ ] **Google Calendar Integration**: Direct syncing of the AI Smart Schedule with your personal calendar.
-- [ ] **Wear OS Support**: Quick spotlight alerts on your wrist to see your next action instantly.
-- [ ] **AI Habit Tracking**: Automated analysis of streaks to form positive, lifelong habits.
-- [ ] **Shared Workspace**: Collaborate with family members or team players on shared, supportive objectives.
+| Page | Preview |
+|---|---|
+| 🏠 Landing Page | ![Landing Page](screenshots/landing-page.png) |
+| 🔐 Login Page | ![Login Page](screenshots/login-page.png) |
+| 📊 Dashboard | ![Dashboard](screenshots/dashboard.png) |
+| 📝 My Tasks | ![My Tasks](screenshots/my-tasks.png) |
+| 📆 Calendar | ![Calendar](screenshots/calendar.png) |
+| 🤖 AI Assistant | ![AI Assistant](screenshots/ai-assistant.png) |
+| 🎯 Focus Mode | ![Focus Mode](screenshots/focus-mode.png) |
+| 📈 Reports | ![Reports](screenshots/reports.png) |
+| ⚙️ Settings | ![Settings](screenshots/settings.png) |
 
 ---
 
-## 🌸 Open Source Credits
+## 🌟 Why Momentum AI?
 
-- **Vite & React** — Lightning-fast compilation and robust client rendering.
-- **Google Gemini API** — High-reasoning and structured JSON roadmap breakdowns.
-- **Tailwind CSS v4** — Smooth, modern, and expressive styling utilities.
-- **Framer Motion** — Premium tactile tab animations and modal transitions.
-- **Lucide Icons** — Beautiful, consistent, and clean iconography.
+Most productivity apps are passive — they wait for a deadline to get close before nudging the user. By then, it's often too late to plan properly, and the result is rushed, last-minute work.
+
+Momentum AI takes a fundamentally different approach. By continuously analyzing workload and proactively recommending the next best action, it helps users build **consistent daily progress** instead of relying on last-minute pressure to get things done.
+
+It's not just a task manager — it's a coach that keeps users moving forward, one achievable step at a time.
+
+---
+
+## 🚀 Future Scope
+
+- 📆 Google Calendar Integration
+- 🎙️ Voice Assistant
+- 📱 Mobile App
+- 🔔 Push Notifications
+- 📈 Habit Tracking
+- 🗓️ AI Weekly Reviews
+- 🔥 Productivity Heatmaps
+- 🔄 Cross-device Synchronization
+- 👥 Team Collaboration
+
+---
+
+## 🙏 Open Source Credits
+
+Heartfelt thanks to the open-source projects that made Momentum AI possible:
+
+- [React](https://react.dev/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Express](https://expressjs.com/)
+- [SQLite](https://www.sqlite.org/)
+- [React Router](https://reactrouter.com/)
+- [Framer Motion](https://www.framer.com/motion/)
+- [Lucide React](https://lucide.dev/)
+- [Recharts](https://recharts.org/)
+
+All third-party libraries belong to their respective creators and maintainers. 🙌
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**.
+
+---
+
+## 👤 Author
+
+**Robina Shakwa**
+🔗 GitHub: [@robinashakwa](https://github.com/robinashakwa)
+
+---
+
+<div align="center">
+
+⭐ **Built with Google Gemini AI during the VIBE2SHIP Hackathon.**
+If you found this project helpful, consider giving it a Star.
+
+</div>
